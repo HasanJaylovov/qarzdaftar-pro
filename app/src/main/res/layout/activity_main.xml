@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#090d16"
+    android:gravity="center"
+    android:padding="20dp">
+
+    <!-- OBUNA QULF EKRANI (LOCKED) -->
+    <LinearLayout
+        android:id="@+id/lockScreenLayout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:visibility="visible">
+
+        <TextView
+            android:layout_width="70dp"
+            android:layout_height="70dp"
+            android:background="#1e293b"
+            android:gravity="center"
+            android:text="🔒"
+            android:textSize="32sp"
+            android:layout_marginBottom="16dp"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            text="Obuna Faol Emas"
+            android:textColor="#ffffff"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Dasturdan foydalanish uchun Telegram bot orqali obunani faollashtiring."
+            android:textColor="#94a3b8"
+            android:textSize="13sp"
+            android:gravity="center"
+            android:layout_marginBottom="24dp"/>
+
+        <Button
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:text="Telegram Botda To'lash"
+            android:textColor="#ffffff"
+            android:backgroundTint="#0284c7"
+            android:onClick="openTelegramBotForPayment"
+            android:textStyle="bold"/>
+    </LinearLayout>
+
+    <!-- ASOSIY ILOVA EKRANI (UNLOCKED) -->
+    <LinearLayout
+        android:id="@+id/mainContentLayout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="10dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="QarzDaftar Pro (Faol)"
+            android:textColor="#10b981"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="20dp"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Do'koningiz muvaffaqiyatli ishlayapti va avtomatik SMS tizimi ulangan."
+            android:textColor="#f8fafc"
+            android:textSize="14sp"/>
+    </LinearLayout>
+
+</LinearLayout>
