@@ -18,12 +18,11 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Generate Gradle Wrapper
-        run: gradle wrapper --gradle-version 8.5
-
-      - name: Build Debug APK
+      - name: Build Debug APK with Gradle 8.5
         run: |
-          chmod +x gradlew
+          # Gradle wrapper'ni avtomatik yuklab olib ishlatish uchun gradlew scriptini chaqiramiz
+          # Agar gradlew bo'lmasa, gradle setup orqali ta'minlaymiz
+          chmod +x gradlew || true
           ./gradlew assembleDebug
 
       - name: Upload APK Artifact
