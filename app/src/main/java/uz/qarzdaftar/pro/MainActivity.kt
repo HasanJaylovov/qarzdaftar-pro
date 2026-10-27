@@ -341,10 +341,10 @@ class MainActivity : AppCompatActivity() {
         botToken = prefs.getString("bot_token", "") ?: ""
     }
 
-    private fun glassBox(bgColor: String = "#1A2639", strokeColor: String = "#4D38BDF8", cornerRadius: Float = 42f): GradientDrawable {
+    private fun glassBox(bgColor: String = "#1A2639", strokeColor: String = "#4D38BDF8", rad: Float = 42f): GradientDrawable {
         return GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
-            cornerRadius = cornerRadius
+            cornerRadius = rad
             setColor(Color.parseColor(bgColor))
             setStroke(3, Color.parseColor(strokeColor))
         }
