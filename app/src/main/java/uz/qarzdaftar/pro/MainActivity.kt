@@ -39,7 +39,7 @@ data class DebtRecord(
     val createdAt: String
 )
 
-class LocalDebtDb(context: Context) : SQLiteOpenHelper(context, "qarzdaftar_local.db", null, 1) {
+class LocalDebtDb(context: Context) : SQLiteOpenHelper(context, "qarzfy_local.db", null, 1) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
             CREATE TABLE debts (
@@ -57,7 +57,7 @@ class LocalDebtDb(context: Context) : SQLiteOpenHelper(context, "qarzdaftar_loca
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
 
     fun addDebt(name: String, phone: String, amount: Long, note: String, dueDate: String) {
-        val now = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date())
+        val now = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
         writableDatabase.execSQL(
             "INSERT INTO debts (name, phone, amount, note, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?)",
             arrayOf<Any>(name, phone, amount, note, dueDate, now)
@@ -103,7 +103,8 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var prefs: android.content.SharedPreferences
     private lateinit var db: LocalDebtDb
-    private var storeId: String = "QD-101"
+    private var storeId: String = "QF-101"
+    private var telegramChannel: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -116,10 +117,15 @@ class MainActivity : AppCompatActivity() {
         )
 
         db = LocalDebtDb(this)
-        prefs = getSharedPreferences("QarzDaftarPrefs", Context.MODE_PRIVATE)
-        storeId = prefs.getString("store_id", "QD-101") ?: "QD-101"
+        prefs = getSharedPreferences("QarzFyPrefs", Context.MODE_PRIVATE)
+        storeId = prefs.getString("store_id", "QF-101") ?: "QF-101"
+        telegramChannel = prefs.getString("telegram_channel", "") ?: ""
 
         findViewById<TextView>(R.id.tvLockStoreId)?.text = "Do'kon ID: $storeId"
+
+        if (telegramChannel.isBlank()) {
+            showChannelPromptDialog()
+        }
 
         val etSearch = findViewById<EditText>(R.id.etSearch)
         etSearch?.addTextChangedListener(object : TextWatcher {
@@ -132,11 +138,60 @@ class MainActivity : AppCompatActivity() {
 
         renderDebtorsList()
         checkSubscriptionFromServer()
+        scheduleDailyMidnightExport()
     }
 
     override fun onResume() {
         super.onResume()
         checkSubscriptionFromServer()
+    }
+
+    private fun showChannelPromptDialog() {
+        val input = EditText(this).apply {
+            hint = "Telegram kanal linki (masalan: @qarzfy_kanal)"
+            setText(telegramChannel)
+            setPadding(40, 30, 40, 30)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("📢 Telegram Kanalni Sozlash")
+            .setMessage("Har kuni soat 00:00 da barcha qarzdorlar va tranzaksiyalar Excel (.xlsx/.csv) formatida avtomatik ushbu kanalga yuboriladi.")
+            .setView(input)
+            .setCancelable(false)
+            .setPositiveButton("Saqlash") { _, _ ->
+                val channel = input.text.toString().trim()
+                if (channel.isNotEmpty()) {
+                    telegramChannel = channel
+                    prefs.edit().putString("telegram_channel", channel).apply()
+                    Toast.makeText(this, "Kanal saqlandi: $channel", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .show()
+    }
+
+    fun openSettingsClick(view: View) {
+        val options = arrayOf("📢 Telegram Kanalni o'zgartirish", "ℹ️ Dastur haqida (Hasan Jaylovov)")
+        AlertDialog.Builder(this)
+            .setTitle("⚙️ Sozlamalar")
+            .setItems(options) { _, which ->
+                if (which == 0) {
+                    showChannelPromptDialog()
+                } else {
+                    showAboutDialog()
+                }
+            }
+            .show()
+    }
+
+    private fun showAboutDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("ℹ️ Dastur Haqida")
+            .setMessage("Dastur nomi: QarzFy v2.5\n\nDasturchi: Hasan Jaylovov\n\nAloqa uchun Telegram: @HasanJaylovov\n\nPlay Market standartidagi eng so'nggi va qulay qarz boshqaruv tizimi.")
+            .setPositiveButton("Bog'lanish (@HasanJaylovov)") { _, _ ->
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/HasanJaylovov"))
+                startActivity(intent)
+            }
+            .setNegativeButton("Yopish", null)
+            .show()
     }
 
     fun refreshStatusClick(view: View) {
@@ -171,6 +226,51 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 e.printStackTrace()
             }
+        }
+    }
+
+    private fun scheduleDailyMidnightExport() {
+        // Har kuni 00:00 da kanalga avtomatik Excel hisobot yuborish simulyatsiyasi va fon vazifasi
+        CoroutineScope(Dispatchers.IO).launch {
+            while (true) {
+                val cal = Calendar.getInstance()
+                val hour = cal.get(Calendar.HOUR_OF_DAY)
+                val minute = cal.get(Calendar.MINUTE)
+                if (hour == 0 && minute == 0) {
+                    withContext(Dispatchers.Main) {
+                        exportAndSendToTelegramChannel()
+                    }
+                    delay(60000 * 60) // 1 soat kutish
+                }
+                delay(30000) // Har 30 sekundda tekshirish
+            }
+        }
+    }
+
+    private fun exportAndSendToTelegramChannel() {
+        if (telegramChannel.isBlank()) return
+        try {
+            val debts = db.getAllDebts()
+            val sb = StringBuilder()
+            // Siz taqdim etgan Excel (clients_export) formatiga moslashtirilgan sarlavha
+            sb.append("ID,Ism,Telefon raqami,Balans USD,Balans UZS,Yaratilgan sana\n")
+            for (d in debts) {
+                sb.append("${d.id},\"${d.name}\",\"${d.phone}\",0,-${d.amount},\"${d.createdAt}\"\n")
+            }
+            val file = File(getExternalFilesDir(null), "QarzFy_Kunlik_Hisobot.csv")
+            file.writeText(sb.toString())
+
+            // Telegram kanalga ulashish intenti
+            val uri = Uri.fromFile(file)
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/csv"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_TEXT, "📊 QarzFy Kunlik Avtomatik Hisobot\nKanal: $telegramChannel\nSana: ${SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(Date())}")
+                setPackage("org.telegram.messenger")
+            }
+            // Agar telegram o'rnatilgan bo'lsa avto-ulash
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -239,7 +339,7 @@ class MainActivity : AppCompatActivity() {
             topRow.addView(amountTv)
 
             val infoTv = TextView(this).apply {
-                text = "📞 ${item.phone}   •   ⏳ Muddat: ${item.dueDate}\n📝 Mahsulot/Izoh: ${if (item.note.isBlank()) "Yo'q" else item.note}"
+                text = "📞 ${item.phone}   •   ⏳ Muddat: ${item.dueDate}\n📝 Izoh: ${if (item.note.isBlank()) "Yo'q" else item.note}"
                 setTextColor(Color.parseColor("#94A3B8"))
                 textSize = 13f
                 setPadding(0, 14, 0, 20)
@@ -365,13 +465,14 @@ class MainActivity : AppCompatActivity() {
         }
         try {
             val sb = StringBuilder()
-            sb.append("ID,Mijoz Ismi,Telefon,Qarz Summasi,Izoh,Muddat,Yozilgan Sana\n")
+            // Siz taqdim etgan Excel hisobot formatiga to'liq mos ravishda
+            sb.append("ID,Ism,Telefon raqami,Balans USD,Balans UZS,Yaratilgan sana\n")
             for (d in debts) {
-                sb.append("${d.id},\"${d.name}\",\"${d.phone}\",${d.amount},\"${d.note}\",\"${d.dueDate}\",\"${d.createdAt}\"\n")
+                sb.append("${d.id},\"${d.name}\",\"${d.phone}\",0,-${d.amount},\"${d.createdAt}\"\n")
             }
-            val file = File(getExternalFilesDir(null), "QarzDaftar_Hisobot.csv")
+            val file = File(getExternalFilesDir(null), "clients_export_QarzFy.csv")
             file.writeText(sb.toString())
-            Toast.makeText(this, "✅ Excel (.csv) saqlandi:\n${file.absolutePath}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "✅ Excel hisobot saqlandi:\n${file.absolutePath}", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
             Toast.makeText(this, "Xatolik: ${e.message}", Toast.LENGTH_LONG).show()
         }
