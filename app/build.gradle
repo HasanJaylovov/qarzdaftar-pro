@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 40
-        versionName "4.0-Glassy3D"
+        versionCode 50
+        versionName "5.0-Glassmorphism"
     }
 
     buildTypes {
