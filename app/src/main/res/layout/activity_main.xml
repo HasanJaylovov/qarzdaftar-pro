@@ -4,6 +4,7 @@
     android:layout_height="match_parent"
     android:background="#090D16">
 
+    <!-- 1. OBUNA QULF EKRANI -->
     <LinearLayout
         android:id="@+id/lockScreenLayout"
         android:layout_width="match_parent"
@@ -14,17 +15,17 @@
         android:visibility="gone">
 
         <ImageView
-            android:layout_width="96dp"
-            android:layout_height="96dp"
-            android:src="@drawable/ic_qarzdaftar_logo"
-            android:layout_marginBottom="20dp"/>
+            android:layout_width="100dp"
+            android:layout_height="100dp"
+            android:src="@drawable/ic_qarzfy_logo"
+            android:layout_marginBottom="16dp"/>
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="QarzDaftar Pro"
+            android:text="qarzfy"
             android:textColor="#FFFFFF"
-            android:textSize="24sp"
+            android:textSize="28sp"
             android:textStyle="bold"
             android:layout_marginBottom="6dp"/>
 
@@ -33,7 +34,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Do'kon ID: QD-101"
-            android:textColor="#38BDF8"
+            android:textColor="#00A651"
             android:textSize="15sp"
             android:textStyle="bold"
             android:layout_marginBottom="16dp"/>
@@ -41,7 +42,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Obuna muddati tugagan yoki faol emas.\nDasturni to'liq ishga tushirish uchun Telegram bot orqali oylik obunani (39,000 so'm) faollashtiring."
+            android:text="Obuna muddati tugagan yoki faol emas.\nQarzFy dasturini to'liq ishga tushirish uchun Telegram bot orqali obunani faollashtiring."
             android:textColor="#94A3B8"
             android:textSize="14sp"
             android:gravity="center"
@@ -52,7 +53,7 @@
             android:layout_height="54dp"
             android:text="💳 Telegram Botda To'lash"
             android:textColor="#FFFFFF"
-            android:backgroundTint="#0284C7"
+            android:backgroundTint="#0B57D0"
             android:onClick="openTelegramBotForPayment"
             android:textStyle="bold"
             android:textSize="15sp"
@@ -67,26 +68,28 @@
             android:onClick="refreshStatusClick"/>
     </LinearLayout>
 
+    <!-- 2. ASOSIY DASTUR EKRANI (QarzFy / Pdaftar) -->
     <LinearLayout
         android:id="@+id/mainContentLayout"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
-        android:padding="16dp"
         android:visibility="visible">
 
+        <!-- Yuqori Header -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginBottom="14dp">
+            android:background="#111827"
+            android:padding="12dp">
 
             <ImageView
-                android:layout_width="42dp"
-                android:layout_height="42dp"
-                android:src="@drawable/ic_qarzdaftar_logo"
-                android:layout_marginEnd="12dp"/>
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/ic_qarzfy_logo"
+                android:layout_marginEnd="10dp"/>
 
             <LinearLayout
                 android:layout_width="0dp"
@@ -95,146 +98,222 @@
                 android:orientation="vertical">
 
                 <TextView
+                    android:id="@+id/tvAppHeaderTitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="QarzDaftar Pro"
+                    android:text="QarzFy"
                     android:textColor="#FFFFFF"
-                    android:textSize="19sp"
+                    android:textSize="18sp"
                     android:textStyle="bold"/>
 
                 <TextView
-                    android:id="@+id/tvSubBadge"
+                    android:id="@+id/tvChannelStatus"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="✅ Obuna faol • Avto-SMS yoniq"
-                    android:textColor="#10B981"
-                    android:textSize="12sp"/>
+                    android:text="Avto-Eksport: 00:00 • SMS Yoniq"
+                    android:textColor="#00A651"
+                    android:textSize="11sp"/>
             </LinearLayout>
 
             <Button
                 android:layout_width="wrap_content"
-                android:layout_height="38dp"
-                android:text="📊 Excel"
-                android:textSize="12sp"
+                android:layout_height="36dp"
+                android:text="📤 Eksport"
+                android:textSize="11sp"
                 android:textColor="#FFFFFF"
-                android:backgroundTint="#059669"
-                android:onClick="exportToExcelClick"/>
+                android:backgroundTint="#00A651"
+                android:onClick="exportAndSendNowClick"/>
         </LinearLayout>
 
+        <!-- Umumiy Balans Paneli (UZS va USD) -->
         <LinearLayout
+            android:id="@+id/topSummaryRow"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginBottom="12dp">
+            android:paddingHorizontal="12dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="6dp">
 
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:background="#1E293B"
-                android:padding="12dp"
+                android:padding="10dp"
                 android:orientation="vertical"
-                android:layout_marginEnd="6dp">
+                android:layout_marginEnd="5dp">
 
                 <TextView
+                    android:id="@+id/tvCard1Title"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Jami Qarzlar"
+                    android:text="Balans UZS (Qarz)"
                     android:textColor="#94A3B8"
-                    android:textSize="12sp"/>
+                    android:textSize="11sp"/>
 
                 <TextView
-                    android:id="@+id/tvTotalDebt"
+                    android:id="@+id/tvTotalUzs"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="0 so'm"
-                    android:textColor="#38BDF8"
-                    android:textSize="17sp"
-                    android:textStyle="bold"
-                    android:layout_marginTop="4dp"/>
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:background="#1E293B"
-                android:padding="12dp"
-                android:orientation="vertical"
-                android:layout_marginStart="6dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Qarzdorlar soni"
-                    android:textColor="#94A3B8"
-                    android:textSize="12sp"/>
-
-                <TextView
-                    android:id="@+id/tvDebtorsCount"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0 ta mijoz"
+                    android:text="0 UZS"
                     android:textColor="#F87171"
-                    android:textSize="17sp"
+                    android:textSize="15sp"
                     android:textStyle="bold"
-                    android:layout_marginTop="4dp"/>
+                    android:layout_marginTop="2dp"/>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:background="#1E293B"
+                android:padding="10dp"
+                android:orientation="vertical"
+                android:layout_marginStart="5dp">
+
+                <TextView
+                    android:id="@+id/tvCard2Title"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Balans USD (Qarz)"
+                    android:textColor="#94A3B8"
+                    android:textSize="11sp"/>
+
+                <TextView
+                    android:id="@+id/tvTotalUsd"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0 USD"
+                    android:textColor="#38BDF8"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:layout_marginTop="2dp"/>
             </LinearLayout>
         </LinearLayout>
 
+        <!-- Amallar va Qidiruv paneli -->
         <LinearLayout
+            android:id="@+id/actionSearchBlock"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="10dp">
+            android:orientation="vertical"
+            android:paddingHorizontal="12dp">
 
-            <Button
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_weight="1"
-                android:text="➕ Qarz Yozish"
-                android:textColor="#FFFFFF"
-                android:backgroundTint="#0284C7"
-                android:textStyle="bold"
-                android:onClick="openAddDebtDialog"
-                android:layout_marginEnd="6dp"/>
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="8dp">
 
-            <Button
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_weight="1"
-                android:text="📩 Yoppasiga SMS"
+                <Button
+                    android:id="@+id/btnPrimaryAction"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_weight="1"
+                    android:text="➕ Yangi Qo'shish"
+                    android:textColor="#FFFFFF"
+                    android:backgroundTint="#0B57D0"
+                    android:textStyle="bold"
+                    android:textSize="12sp"
+                    android:onClick="onPrimaryActionClick"
+                    android:layout_marginEnd="5dp"/>
+
+                <Button
+                    android:id="@+id/btnSecondaryAction"
+                    android:layout_width="0dp"
+                    android:layout_height="44dp"
+                    android:layout_weight="1"
+                    android:text="📩 Yoppasiga SMS"
+                    android:textColor="#FFFFFF"
+                    android:backgroundTint="#D97706"
+                    android:textStyle="bold"
+                    android:textSize="12sp"
+                    android:onClick="sendRemindersToAllClick"
+                    android:layout_marginStart="5dp"/>
+            </LinearLayout>
+
+            <EditText
+                android:id="@+id/etSearch"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:background="#1E293B"
+                android:hint="🔍 Ism yoki telefon raqam bo'yicha qidirish..."
                 android:textColor="#FFFFFF"
-                android:backgroundTint="#D97706"
-                android:textStyle="bold"
-                android:onClick="sendRemindersToAllClick"
-                android:layout_marginStart="6dp"/>
+                android:textColorHint="#64748B"
+                android:paddingHorizontal="12dp"
+                android:textSize="13sp"
+                android:singleLine="true"
+                android:layout_marginBottom="6dp"/>
         </LinearLayout>
 
-        <EditText
-            android:id="@+id/etSearch"
-            android:layout_width="match_parent"
-            android:layout_height="44dp"
-            android:background="#1E293B"
-            android:hint="🔍 Ism yoki telefon raqam bo'yicha qidiruv..."
-            android:textColor="#FFFFFF"
-            android:textColorHint="#64748B"
-            android:paddingHorizontal="14dp"
-            android:textSize="14sp"
-            android:singleLine="true"
-            android:layout_marginBottom="10dp"/>
-
+        <!-- Dinamik Kontent Ro'yxati -->
         <ScrollView
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1">
+            android:layout_weight="1"
+            android:paddingHorizontal="12dp">
 
             <LinearLayout
-                android:id="@+id/debtorsListContainer"
+                android:id="@+id/contentListContainer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"/>
+                android:orientation="vertical"
+                android:paddingBottom="16dp"/>
         </ScrollView>
+
+        <!-- Pastki Pdaftar Navigatsiya Menyusi (4 ta Tab) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:orientation="horizontal"
+            android:background="#111827"
+            android:padding="4dp">
+
+            <Button
+                android:id="@+id/tabClients"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:text="👥 Mijozlar"
+                android:textSize="11sp"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#0B57D0"
+                android:onClick="switchTabClients"/>
+
+            <Button
+                android:id="@+id/tabSuppliers"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:text="🚚 Ta'minot"
+                android:textSize="11sp"
+                android:textColor="#94A3B8"
+                android:backgroundTint="#1E293B"
+                android:onClick="switchTabSuppliers"/>
+
+            <Button
+                android:id="@+id/tabCashbox"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:text="🏦 Kassa"
+                android:textSize="11sp"
+                android:textColor="#94A3B8"
+                android:backgroundTint="#1E293B"
+                android:onClick="switchTabCashbox"/>
+
+            <Button
+                android:id="@+id/tabAbout"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:text="ℹ️ Haqida"
+                android:textSize="11sp"
+                android:textColor="#94A3B8"
+                android:backgroundTint="#1E293B"
+                android:onClick="switchTabAbout"/>
+        </LinearLayout>
 
     </LinearLayout>
 </FrameLayout>
