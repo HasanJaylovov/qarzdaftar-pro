@@ -4,17 +4,15 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:allowBackup="true"
-        android:icon="@drawable/ic_qarzfy_logo"
-        android:roundIcon="@drawable/ic_qarzfy_logo"
+        android:icon="@drawable/ic_qarzdaftar_logo"
+        android:roundIcon="@drawable/ic_qarzdaftar_logo"
         android:label="QarzFy"
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
-
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -24,9 +22,5 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <receiver
-            android:name=".DailyBackupReceiver"
-            android:exported="false" />
     </application>
 </manifest>
