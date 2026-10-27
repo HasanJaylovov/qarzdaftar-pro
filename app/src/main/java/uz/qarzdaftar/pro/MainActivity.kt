@@ -13,7 +13,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import kotlinx.coroutines.*
 import org.json.JSONObject
-import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -38,6 +37,11 @@ class MainActivity : AppCompatActivity() {
         prefs = getSharedPreferences("QarzDaftarPrefs", Context.MODE_PRIVATE)
         storeId = prefs.getString("store_id", "QD-101") ?: "QD-101"
 
+        checkSubscriptionFromServer()
+    }
+
+    override fun onResume() {
+        super.onResume()
         checkSubscriptionFromServer()
     }
 
@@ -86,7 +90,7 @@ class MainActivity : AppCompatActivity() {
             }
             val parts = smsManager.divideMessage(message)
             smsManager.sendMultipartTextMessage(phoneNumber, null, parts, null, null)
-            Toast.makeText(this, "Avto-SMS yuborildi!", Toast.SHORT).show()
+            Toast.makeText(this, "Avto-SMS yuborildi!", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Toast.makeText(this, "SMS xatosi: ${e.message}", Toast.LENGTH_LONG).show()
         }
