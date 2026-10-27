@@ -4,68 +4,74 @@
     android:layout_height="match_parent"
     android:background="#090D16">
 
-    <!-- OBUNA QULF EKRANI -->
+    <!-- LOGIN / RO'YXATDAN O'TISH EKRANI -->
     <LinearLayout
-        android:id="@+id/lockScreenLayout"
+        android:id="@+id/loginScreenLayout"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:gravity="center"
         android:padding="28dp"
-        android:visibility="gone">
+        android:visibility="visible">
 
         <ImageView
-            android:layout_width="96dp"
-            android:layout_height="96dp"
+            android:layout_width="88dp"
+            android:layout_height="88dp"
             android:src="@drawable/ic_qarzdaftar_logo"
-            android:layout_marginBottom="20dp"/>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="QarzFy"
-            android:textColor="#FFFFFF"
-            android:textSize="24sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="6dp"/>
-
-        <TextView
-            android:id="@+id/tvLockStoreId"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Do'kon ID: QF-101"
-            android:textColor="#38BDF8"
-            android:textSize="15sp"
-            android:textStyle="bold"
             android:layout_marginBottom="16dp"/>
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Obuna muddati tugagan yoki faol emas.\nDasturni ishga tushirish uchun Telegram bot orqali obunani faollashtiring."
-            android:textColor="#94A3B8"
-            android:textSize="14sp"
-            android:gravity="center"
-            android:layout_marginBottom="28dp"/>
-
-        <Button
-            android:layout_width="match_parent"
-            android:layout_height="54dp"
-            android:text="💳 Telegram Botda To'lash"
+            android:text="QarzFy Tizimiga Kirish"
             android:textColor="#FFFFFF"
-            android:backgroundTint="#0284C7"
-            android:onClick="openTelegramBotForPayment"
+            android:textSize="22sp"
             android:textStyle="bold"
-            android:textSize="15sp"
+            android:layout_marginBottom="24dp"/>
+
+        <EditText
+            android:id="@+id/etLoginPhone"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:background="#1E293B"
+            android:hint="Telefon raqam (+998901234567)"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#64748B"
+            android:inputType="phone"
+            android:paddingHorizontal="16dp"
             android:layout_marginBottom="12dp"/>
 
+        <EditText
+            android:id="@+id/etLoginPassword"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:background="#1E293B"
+            android:hint="Parol"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#64748B"
+            android:inputType="textPassword"
+            android:paddingHorizontal="16dp"
+            android:layout_marginBottom="12dp"/>
+
+        <EditText
+            android:id="@+id/etLoginChannel"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:background="#1E293B"
+            android:hint="Telegram Kanal Linki (@kanal_nomi)"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#64748B"
+            android:paddingHorizontal="16dp"
+            android:layout_marginBottom="20dp"/>
+
         <Button
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:text="🔄 Holatni qayta tekshirish"
-            android:textColor="#E2E8F0"
-            android:backgroundTint="#1E293B"
-            android:onClick="refreshStatusClick"/>
+            android:layout_height="52dp"
+            android:text="🔑 Kirish / Ro'yxatdan o'tish"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#0284C7"
+            android:textStyle="bold"
+            android:onClick="performLoginClick"/>
     </LinearLayout>
 
     <!-- ASOSIY BOSHQARUV PANELI -->
@@ -75,20 +81,20 @@
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:padding="16dp"
-        android:visibility="visible">
+        android:visibility="gone">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginBottom="14dp">
+            android:layout_marginBottom="12dp">
 
             <ImageView
-                android:layout_width="42dp"
-                android:layout_height="42dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:src="@drawable/ic_qarzdaftar_logo"
-                android:layout_marginEnd="12dp"/>
+                android:layout_marginEnd="10dp"/>
 
             <LinearLayout
                 android:layout_width="0dp"
@@ -101,43 +107,43 @@
                     android:layout_height="wrap_content"
                     android:text="QarzFy"
                     android:textColor="#FFFFFF"
-                    android:textSize="19sp"
+                    android:textSize="18sp"
                     android:textStyle="bold"/>
 
                 <TextView
-                    android:id="@+id/tvSubBadge"
+                    android:id="@+id/tvUserStoreBadge"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="✅ Obuna faol • Kanalga eksport yoniq"
+                    android:text="Do'kon ID: QF-101"
                     android:textColor="#10B981"
-                    android:textSize="12sp"/>
+                    android:textSize="11sp"/>
             </LinearLayout>
 
             <Button
                 android:layout_width="wrap_content"
-                android:layout_height="38dp"
-                android:text="⚙️ Sozlama"
-                android:textSize="11sp"
+                android:layout_height="36dp"
+                android:text="📤 Kanalga yuborish"
+                android:textSize="10sp"
                 android:textColor="#FFFFFF"
-                android:backgroundTint="#334155"
-                android:onClick="openSettingsClick"
-                android:layout_marginEnd="6dp"/>
+                android:backgroundTint="#0284C7"
+                android:onClick="sendToTelegramChannelClick"
+                android:layout_marginEnd="4dp"/>
 
             <Button
                 android:layout_width="wrap_content"
-                android:layout_height="38dp"
-                android:text="📊 Excel"
-                android:textSize="11sp"
+                android:layout_height="36dp"
+                android:text="ℹ️ Info"
+                android:textSize="10sp"
                 android:textColor="#FFFFFF"
-                android:backgroundTint="#059669"
-                android:onClick="exportToExcelClick"/>
+                android:backgroundTint="#334155"
+                android:onClick="openInfoDialogClick"/>
         </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginBottom="12dp">
+            android:layout_marginBottom="10dp">
 
             <LinearLayout
                 android:layout_width="0dp"
@@ -153,7 +159,7 @@
                     android:layout_height="wrap_content"
                     android:text="Jami Qarzlar"
                     android:textColor="#94A3B8"
-                    android:textSize="12sp"/>
+                    android:textSize="11sp"/>
 
                 <TextView
                     android:id="@+id/tvTotalDebt"
@@ -161,7 +167,7 @@
                     android:layout_height="wrap_content"
                     android:text="0 so'm"
                     android:textColor="#38BDF8"
-                    android:textSize="17sp"
+                    android:textSize="16sp"
                     android:textStyle="bold"
                     android:layout_marginTop="4dp"/>
             </LinearLayout>
@@ -180,7 +186,7 @@
                     android:layout_height="wrap_content"
                     android:text="Qarzdorlar soni"
                     android:textColor="#94A3B8"
-                    android:textSize="12sp"/>
+                    android:textSize="11sp"/>
 
                 <TextView
                     android:id="@+id/tvDebtorsCount"
@@ -188,7 +194,7 @@
                     android:layout_height="wrap_content"
                     android:text="0 ta mijoz"
                     android:textColor="#F87171"
-                    android:textSize="17sp"
+                    android:textSize="16sp"
                     android:textStyle="bold"
                     android:layout_marginTop="4dp"/>
             </LinearLayout>
@@ -198,11 +204,11 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginBottom="10dp">
+            android:layout_marginBottom="8dp">
 
             <Button
                 android:layout_width="0dp"
-                android:layout_height="48dp"
+                android:layout_height="46dp"
                 android:layout_weight="1"
                 android:text="➕ Qarz Yozish"
                 android:textColor="#FFFFFF"
@@ -213,28 +219,28 @@
 
             <Button
                 android:layout_width="0dp"
-                android:layout_height="48dp"
+                android:layout_height="46dp"
                 android:layout_weight="1"
-                android:text="📩 Yoppasiga SMS"
+                android:text="📊 Excel Eksport"
                 android:textColor="#FFFFFF"
-                android:backgroundTint="#D97706"
+                android:backgroundTint="#059669"
                 android:textStyle="bold"
-                android:onClick="sendRemindersToAllClick"
+                android:onClick="exportToExcelClick"
                 android:layout_marginStart="6dp"/>
         </LinearLayout>
 
         <EditText
             android:id="@+id/etSearch"
             android:layout_width="match_parent"
-            android:layout_height="44dp"
+            android:layout_height="42dp"
             android:background="#1E293B"
-            android:hint="🔍 Ism yoki telefon raqam bo'yicha qidiruv..."
+            android:hint="🔍 Ism yoki telefon bo'yicha qidiruv..."
             android:textColor="#FFFFFF"
             android:textColorHint="#64748B"
             android:paddingHorizontal="14dp"
-            android:textSize="14sp"
+            android:textSize="13sp"
             android:singleLine="true"
-            android:layout_marginBottom="10dp"/>
+            android:layout_marginBottom="8dp"/>
 
         <ScrollView
             android:layout_width="match_parent"
