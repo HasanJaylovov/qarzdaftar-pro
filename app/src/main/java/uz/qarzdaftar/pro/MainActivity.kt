@@ -4156,13 +4156,16 @@ class MainActivity : AppCompatActivity() {
     private fun showPinAndBiometricSettingsDialog() {
         val pinStatus = if (appPinCode.length == 6) "✅ O'rnatilgan (6 xonali)" else "🔴 O'rnatilmagan"
         val bioStatus = if (isBiometricEnabled) "✅ Yoqilgan (Face ID / Barmoq izi)" else "🔴 O'chirilgan"
+        val msg = "📌 PIN-kod holati: " + pinStatus + "
+" +
+            "👆 Face ID / Fingerprint: " + bioStatus + "
+
+" +
+            "PIN-kodni o'zgartirish uchun avval eski 6 xonali PIN-kodingizni kiritasiz."
 
         AlertDialog.Builder(this)
             .setTitle("🔐 Ekran PIN-kodi va Biometrik Qulf")
-            .setMessage("📌 PIN-kod holati: $pinStatus
-👆 Face ID / Fingerprint: $bioStatus
-
-PIN-kodni o'zgartirish uchun avval eski 6 xonali PIN-kodingizni kiritasiz.")
+            .setMessage(msg)
             .setPositiveButton("🔄 PIN-kodni o'zgartirish") { _, _ ->
                 if (appPinCode.length == 6) {
                     renderPinLockScreen(mode = "CHANGE_VERIFY_OLD")
@@ -4178,7 +4181,6 @@ PIN-kodni o'zgartirish uchun avval eski 6 xonali PIN-kodingizni kiritasiz.")
             .setNegativeButton("Yopish", null)
             .show()
     }
-
     private fun showPushSettingsDialog() {
         AlertDialog.Builder(this).setTitle("🔔 Avto-Save va Muddat Avto-SMS")
             .setMessage("• Har bir kirim-chiqim va qarz yozilganda fayl avtomatik Download/QarzFy/QarzFy_AvtoBazasi.xlsx ga saqlanadi.\n• Qarz muddati kelganda xaridorlar va ta'minotchilarga avtomatik SMS yuboriladi.")
