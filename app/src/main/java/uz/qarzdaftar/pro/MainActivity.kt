@@ -1274,8 +1274,8 @@ class MainActivity : AppCompatActivity() {
 
         val formCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = glossyCard("#FFFFFF", "#FFFFFF", 48f)
-            elevation = 12f
+            background = glossyCard("#FFFFFFFF", "#CBD5E1", 48f)
+            elevation = 16f
             setPadding(42, 42, 42, 42)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }
@@ -1285,12 +1285,51 @@ class MainActivity : AppCompatActivity() {
         val initStore = if (storeName.isNotBlank()) storeName else (savedAcc?.get("store_name") ?: "Hasan Jaylovov")
         val initAddr = if (storeAddress.isNotBlank()) storeAddress else (savedAcc?.get("store_address") ?: "O'zbekiston, Surxondaryo")
 
-        val etPhone = makeGlassInput("Telefon raqam (+998909958297) *", initPhone)
-        etPhone.inputType = InputType.TYPE_CLASS_PHONE
-        val etPass = makeGlassInput("Parol *", userPassword)
-        etPass.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        val etStore = makeGlassInput("Do'kon nomi", initStore)
-        val etAddr = makeGlassInput("Manzil", initAddr)
+        val etPhone = EditText(this).apply {
+            hint = "Telefon raqam (+998909958297) *"
+            setText(initPhone)
+            setTextColor(Color.parseColor("#0F172A"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+            textSize = 15f
+            inputType = InputType.TYPE_CLASS_PHONE
+            background = glossyCard("#F8FAFC", "#94A3B8", 30f)
+            setPadding(36, 28, 36, 28)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 18 }
+        }
+
+        val etPass = EditText(this).apply {
+            hint = "Parol *"
+            setText(userPassword)
+            setTextColor(Color.parseColor("#0F172A"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+            textSize = 15f
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            background = glossyCard("#F8FAFC", "#94A3B8", 30f)
+            setPadding(36, 28, 36, 28)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 18 }
+        }
+
+        val etStore = EditText(this).apply {
+            hint = "Do'kon nomi"
+            setText(initStore)
+            setTextColor(Color.parseColor("#0F172A"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+            textSize = 15f
+            background = glossyCard("#F8FAFC", "#94A3B8", 30f)
+            setPadding(36, 28, 36, 28)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 18 }
+        }
+
+        val etAddr = EditText(this).apply {
+            hint = "Manzil"
+            setText(initAddr)
+            setTextColor(Color.parseColor("#0F172A"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+            textSize = 15f
+            background = glossyCard("#F8FAFC", "#94A3B8", 30f)
+            setPadding(36, 28, 36, 28)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 18 }
+        }
 
         formCard.addView(TextView(this).apply {
             text = "🔑 Telefon va Parol:"
