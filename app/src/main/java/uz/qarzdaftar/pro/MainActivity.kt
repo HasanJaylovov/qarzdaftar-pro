@@ -4156,11 +4156,9 @@ class MainActivity : AppCompatActivity() {
     private fun showPinAndBiometricSettingsDialog() {
         val pinStatus = if (appPinCode.length == 6) "✅ O'rnatilgan (6 xonali)" else "🔴 O'rnatilmagan"
         val bioStatus = if (isBiometricEnabled) "✅ Yoqilgan (Face ID / Barmoq izi)" else "🔴 O'chirilgan"
-        val msg = "📌 PIN-kod holati: " + pinStatus + "
-" +
-            "👆 Face ID / Fingerprint: " + bioStatus + "
-
-" +
+        val nl = "\n"
+        val msg = "📌 PIN-kod holati: $pinStatus" + nl +
+            "👆 Face ID / Fingerprint: $bioStatus" + nl + nl +
             "PIN-kodni o'zgartirish uchun avval eski 6 xonali PIN-kodingizni kiritasiz."
 
         AlertDialog.Builder(this)
