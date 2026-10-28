@@ -20,6 +20,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.StrictMode
 import android.provider.MediaStore
 import android.telephony.SmsManager
 import android.text.Editable
@@ -32,7 +33,6 @@ import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
-import androidx.core.content.FileProvider
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import kotlinx.coroutines.*
 import org.json.JSONObject
@@ -96,10 +96,28 @@ data class KassaRec(
     val creator: String
 )
 
-class QarzFyDatabase(context: Context) : SQLiteOpenHelper(context, "qarzfy_v7_glossy.db", null, 1) {
+// DOIMIY O'ZGARulMAS BAZA NOMI: "qarzfy_master_permanent.db"
+class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_master_permanent.db", null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
+        createTables(db)
+    }
+
+    private fun createTables(db: SQLiteDatabase) {
         db.execSQL("""
-            CREATE TABLE clients (
+            CREATE TABLE IF NOT EXISTS users (
+                phone TEXT PRIMARY KEY,
+                password TEXT,
+                store_id TEXT,
+                store_name TEXT,
+                store_address TEXT,
+                store_category TEXT,
+                currency TEXT,
+                sub_expiry INTEGER
+            )
+        """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS clients (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT,
                 phone TEXT,
@@ -114,7 +132,7 @@ class QarzFyDatabase(context: Context) : SQLiteOpenHelper(context, "qarzfy_v7_gl
         """.trimIndent())
 
         db.execSQL("""
-            CREATE TABLE transactions (
+            CREATE TABLE IF NOT EXISTS transactions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 tx_id TEXT,
                 kind TEXT,
@@ -130,7 +148,7 @@ class QarzFyDatabase(context: Context) : SQLiteOpenHelper(context, "qarzfy_v7_gl
         """.trimIndent())
 
         db.execSQL("""
-            CREATE TABLE products (
+            CREATE TABLE IF NOT EXISTS products (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT,
                 barcode TEXT,
@@ -144,7 +162,7 @@ class QarzFyDatabase(context: Context) : SQLiteOpenHelper(context, "qarzfy_v7_gl
         """.trimIndent())
 
         db.execSQL("""
-            CREATE TABLE kassa (
+            CREATE TABLE IF NOT EXISTS kassa (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 type TEXT,
                 category TEXT,
@@ -158,7 +176,7 @@ class QarzFyDatabase(context: Context) : SQLiteOpenHelper(context, "qarzfy_v7_gl
         """.trimIndent())
 
         db.execSQL("""
-            CREATE TABLE employees (
+            CREATE TABLE IF NOT EXISTS employees (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT,
                 phone TEXT,
@@ -168,30 +186,117 @@ class QarzFyDatabase(context: Context) : SQLiteOpenHelper(context, "qarzfy_v7_gl
         """.trimIndent())
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        createTables(db)
+    }
+
+    // Eski bazalarda qolib ketgan ma'lumotlarni avtomatik ko'chirib o'tkazish
+    fun migrateOldDatabasesIfNeeded() {
+        val oldDbNames = listOf("qarzfy_v7_glossy.db", "qarzfy_v6_glass.db", "qarzfy_v5_glass.db", "qarzfy_v4_glass.db", "qarzfy_store.db")
+        for (oldName in oldDbNames) {
+            val oldFile = ctx.getDatabasePath(oldName)
+            if (oldFile.exists()) {
+                try {
+                    val oldDb = SQLiteDatabase.openDatabase(oldFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+                    val c = oldDb.rawQuery("SELECT name, phone, bal_usd, bal_uzs, created_at, is_supplier FROM clients", null)
+                    while (c.moveToNext()) {
+                        upsertClientDirect(
+                            c.getString(0) ?: "",
+                            c.getString(1) ?: "",
+                            c.getDouble(2),
+                            c.getLong(3),
+                            c.getString(4) ?: nowStr(),
+                            c.getInt(5) == 1
+                        )
+                    }
+                    c.close()
+                    oldDb.close()
+                    oldFile.delete()
+                } catch (_: Exception) {}
+            }
+        }
+    }
 
     fun nowStr(): String = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
 
+    fun saveAccount(phone: String, pass: String, sId: String, sName: String, sAddr: String, sCat: String, cur: String, exp: Long) {
+        writableDatabase.execSQL(
+            "INSERT OR REPLACE INTO users (phone, password, store_id, store_name, store_address, store_category, currency, sub_expiry) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            arrayOf<Any>(phone, pass, sId, sName, sAddr, sCat, cur, exp)
+        )
+    }
+
+    fun findAccount(phone: String): Map<String, String>? {
+        val clean = phone.replace(" ", "").trim()
+        val c = readableDatabase.rawQuery("SELECT phone, password, store_id, store_name, store_address, store_category, currency, sub_expiry FROM users WHERE REPLACE(phone, ' ', '') = ? OR phone LIKE ?", arrayOf(clean, "%$clean%"))
+        var res: Map<String, String>? = null
+        if (c.moveToFirst()) {
+            res = mapOf(
+                "phone" to (c.getString(0) ?: ""),
+                "password" to (c.getString(1) ?: ""),
+                "store_id" to (c.getString(2) ?: "QF-101"),
+                "store_name" to (c.getString(3) ?: "Do'kon"),
+                "store_address" to (c.getString(4) ?: "O'zbekiston"),
+                "store_category" to (c.getString(5) ?: "Umumiy"),
+                "currency" to (c.getString(6) ?: "UZS"),
+                "sub_expiry" to c.getLong(7).toString()
+            )
+        }
+        c.close()
+        return res
+    }
+
+    fun getLastSavedAccount(): Map<String, String>? {
+        val c = readableDatabase.rawQuery("SELECT phone, password, store_id, store_name, store_address, store_category, currency, sub_expiry FROM users LIMIT 1", null)
+        var res: Map<String, String>? = null
+        if (c.moveToFirst()) {
+            res = mapOf(
+                "phone" to (c.getString(0) ?: ""),
+                "password" to (c.getString(1) ?: ""),
+                "store_id" to (c.getString(2) ?: "QF-101"),
+                "store_name" to (c.getString(3) ?: "Do'kon"),
+                "store_address" to (c.getString(4) ?: "O'zbekiston"),
+                "store_category" to (c.getString(5) ?: "Umumiy"),
+                "currency" to (c.getString(6) ?: "UZS"),
+                "sub_expiry" to c.getLong(7).toString()
+            )
+        }
+        c.close()
+        return res
+    }
+
     fun upsertClientDirect(name: String, phone: String, balUsd: Double, balUzs: Long, createdAt: String, isSupplier: Boolean) {
+        val cleanName = name.trim()
+        if (cleanName.isEmpty()) return
         val db = writableDatabase
         val supFlag = if (isSupplier) 1 else 0
-        val c = db.rawQuery("SELECT id FROM clients WHERE name = ? AND is_supplier = ?", arrayOf(name, supFlag.toString()))
+        val c = db.rawQuery("SELECT id FROM clients WHERE name = ? AND is_supplier = ?", arrayOf(cleanName, supFlag.toString()))
         if (c.moveToFirst()) {
             val id = c.getInt(0)
-            db.execSQL("UPDATE clients SET phone = ?, bal_usd = ?, bal_uzs = ? WHERE id = ?", arrayOf<Any>(phone, balUsd, balUzs, id))
+            db.execSQL("UPDATE clients SET phone = ?, bal_usd = ?, bal_uzs = ? WHERE id = ?", arrayOf<Any>(phone.trim(), balUsd, balUzs, id))
         } else {
             db.execSQL(
                 "INSERT INTO clients (name, phone, bal_usd, bal_uzs, folder, due_date, created_at, is_supplier) VALUES (?, ?, ?, ?, 'Barchasi', 'Bugun', ?, ?)",
-                arrayOf<Any>(name, phone, balUsd, balUzs, createdAt.ifEmpty { nowStr() }, supFlag)
+                arrayOf<Any>(cleanName, phone.trim(), balUsd, balUzs, createdAt.ifEmpty { nowStr() }, supFlag)
             )
         }
         c.close()
     }
 
+    fun insertTxDirect(txId: String, kind: String, personName: String, personPhone: String, amount: Long, currency: String, date: String, note: String, status: String, isSupplier: Boolean) {
+        val supFlag = if (isSupplier) 1 else 0
+        writableDatabase.execSQL(
+            "INSERT INTO transactions (tx_id, kind, person_name, person_phone, amount, currency, date, note, status, is_supplier) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            arrayOf<Any>(txId, kind, personName, personPhone, Math.abs(amount), currency, date.ifEmpty { nowStr() }, note, status.ifEmpty { "Faol" }, supFlag)
+        )
+    }
+
     fun addOrUpdatePersonTx(name: String, phone: String, amount: Long, currency: String, kind: String, note: String, dueDate: String, isSupplier: Boolean, folder: String = "Barchasi") {
+        val cleanName = name.trim()
+        if (cleanName.isEmpty()) return
         val db = writableDatabase
         val supFlag = if (isSupplier) 1 else 0
-        val c = db.rawQuery("SELECT id, bal_usd, bal_uzs FROM clients WHERE name = ? AND is_supplier = ?", arrayOf(name, supFlag.toString()))
+        val c = db.rawQuery("SELECT id, bal_usd, bal_uzs FROM clients WHERE name = ? AND is_supplier = ?", arrayOf(cleanName, supFlag.toString()))
         val delta = if (kind == "Chiqim") -amount else amount
         if (c.moveToFirst()) {
             val id = c.getInt(0)
@@ -207,7 +312,7 @@ class QarzFyDatabase(context: Context) : SQLiteOpenHelper(context, "qarzfy_v7_gl
             val initUzs = if (currency == "UZS") delta else 0L
             db.execSQL(
                 "INSERT INTO clients (name, phone, bal_usd, bal_uzs, folder, due_date, created_at, is_supplier) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                arrayOf<Any>(name, phone, initUsd, initUzs, folder, dueDate, nowStr(), supFlag)
+                arrayOf<Any>(cleanName, phone.trim(), initUsd, initUzs, folder, dueDate, nowStr(), supFlag)
             )
         }
         c.close()
@@ -215,10 +320,7 @@ class QarzFyDatabase(context: Context) : SQLiteOpenHelper(context, "qarzfy_v7_gl
         if (amount > 0) {
             val prefix = if (isSupplier) "ST-" else "D-"
             val txId = prefix + (100000 + Random().nextInt(900000))
-            db.execSQL(
-                "INSERT INTO transactions (tx_id, kind, person_name, person_phone, amount, currency, date, note, status, is_supplier) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Faol', ?)",
-                arrayOf<Any>(txId, kind, name, phone, Math.abs(amount), currency, nowStr(), note, supFlag)
-            )
+            insertTxDirect(txId, kind, cleanName, phone.trim(), amount, currency, nowStr(), note, "Faol", isSupplier)
         }
     }
 
@@ -237,7 +339,7 @@ class QarzFyDatabase(context: Context) : SQLiteOpenHelper(context, "qarzfy_v7_gl
             readableDatabase.rawQuery("SELECT id, name, phone, bal_usd, bal_uzs, folder, due_date, created_at FROM clients WHERE is_supplier = ? AND (name LIKE ? OR phone LIKE ?) ORDER BY $orderBy", arrayOf(supFlag.toString(), "%$query%", "%$query%"))
         }
         while (c.moveToNext()) {
-            list.add(ClientRec(c.getInt(0), c.getString(1), c.getString(2), c.getDouble(3), c.getLong(4), c.getString(5), c.getString(6) ?: "", c.getString(7) ?: ""))
+            list.add(ClientRec(c.getInt(0), c.getString(1) ?: "", c.getString(2) ?: "", c.getDouble(3), c.getLong(4), c.getString(5) ?: "Barchasi", c.getString(6) ?: "", c.getString(7) ?: ""))
         }
         c.close()
         return list
@@ -248,7 +350,7 @@ class QarzFyDatabase(context: Context) : SQLiteOpenHelper(context, "qarzfy_v7_gl
         val supFlag = if (isSupplier) 1 else 0
         val c = readableDatabase.rawQuery("SELECT tx_id, kind, person_name, person_phone, amount, currency, date, note, status FROM transactions WHERE is_supplier = ? ORDER BY id DESC", arrayOf(supFlag.toString()))
         while (c.moveToNext()) {
-            list.add(TxRec(c.getString(0), c.getString(1), c.getString(2), c.getString(3), c.getLong(4), c.getString(5), c.getString(6), c.getString(7) ?: "", c.getString(8), isSupplier))
+            list.add(TxRec(c.getString(0) ?: "", c.getString(1) ?: "", c.getString(2) ?: "", c.getString(3) ?: "", c.getLong(4), c.getString(5) ?: "UZS", c.getString(6) ?: "", c.getString(7) ?: "", c.getString(8) ?: "Faol", isSupplier))
         }
         c.close()
         return list
@@ -257,7 +359,7 @@ class QarzFyDatabase(context: Context) : SQLiteOpenHelper(context, "qarzfy_v7_gl
     fun addProduct(name: String, barcode: String, qty: Int, unit: String, cost: Long, sale: Long, currency: String, supplier: String) {
         writableDatabase.execSQL(
             "INSERT INTO products (name, barcode, qty, unit, cost_price, sale_price, currency, supplier) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            arrayOf<Any>(name, barcode, qty, unit, cost, sale, currency, supplier)
+            arrayOf<Any>(name.trim(), barcode.trim(), qty, unit, cost, sale, currency, supplier)
         )
     }
 
@@ -265,7 +367,7 @@ class QarzFyDatabase(context: Context) : SQLiteOpenHelper(context, "qarzfy_v7_gl
         val list = mutableListOf<ProductRec>()
         val c = readableDatabase.rawQuery("SELECT id, name, barcode, qty, unit, cost_price, sale_price, currency, supplier FROM products ORDER BY id DESC", null)
         while (c.moveToNext()) {
-            list.add(ProductRec(c.getInt(0), c.getString(1), c.getString(2), c.getInt(3), c.getString(4), c.getLong(5), c.getLong(6), c.getString(7), c.getString(8)))
+            list.add(ProductRec(c.getInt(0), c.getString(1) ?: "", c.getString(2) ?: "", c.getInt(3), c.getString(4) ?: "dona", c.getLong(5), c.getLong(6), c.getString(7) ?: "UZS", c.getString(8) ?: ""))
         }
         c.close()
         return list
@@ -282,21 +384,21 @@ class QarzFyDatabase(context: Context) : SQLiteOpenHelper(context, "qarzfy_v7_gl
         val list = mutableListOf<KassaRec>()
         val c = readableDatabase.rawQuery("SELECT id, type, category, amount, currency, pay_type, date, note, creator FROM kassa ORDER BY id DESC", null)
         while (c.moveToNext()) {
-            list.add(KassaRec(c.getInt(0), c.getString(1), c.getString(2), c.getLong(3), c.getString(4), c.getString(5), c.getString(6), c.getString(7), c.getString(8)))
+            list.add(KassaRec(c.getInt(0), c.getString(1) ?: "Kirim", c.getString(2) ?: "Umumiy", c.getLong(3), c.getString(4) ?: "UZS", c.getString(5) ?: "Naqd", c.getString(6) ?: "", c.getString(7) ?: "", c.getString(8) ?: ""))
         }
         c.close()
         return list
     }
 
     fun addEmployee(name: String, phone: String, salaryType: String) {
-        writableDatabase.execSQL("INSERT INTO employees (name, phone, role, salary_type) VALUES (?, ?, 'Sotuvchi', ?)", arrayOf<Any>(name, phone, salaryType))
+        writableDatabase.execSQL("INSERT INTO employees (name, phone, role, salary_type) VALUES (?, ?, 'Sotuvchi', ?)", arrayOf<Any>(name.trim(), phone.trim(), salaryType))
     }
 
     fun getEmployees(): List<Pair<String, String>> {
         val list = mutableListOf<Pair<String, String>>()
         val c = readableDatabase.rawQuery("SELECT name, phone, salary_type FROM employees ORDER BY id DESC", null)
         while (c.moveToNext()) {
-            list.add(Pair("${c.getString(0)} (${c.getString(2)})", c.getString(1)))
+            list.add(Pair("${c.getString(0)} (${c.getString(2)})", c.getString(1) ?: ""))
         }
         c.close()
         return list
@@ -313,12 +415,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var db: QarzFyDatabase
     private lateinit var rootLayout: LinearLayout
 
+    private var isLoggedIn = false
     private var storeId = "QF-101"
     private var storeName = "Hasan Jaylovov"
     private var storeAddress = "O'zbekiston, Surxondaryo"
     private var storeCategory = "Qurilish mollari"
     private var mainCurrency = "UZS"
     private var userPhone = ""
+    private var userPassword = ""
     private var subscriptionExpiryMillis = 0L
 
     private var price1Month = 49000L
@@ -327,46 +431,52 @@ class MainActivity : AppCompatActivity() {
     private var adminCardNumber = "9860 0000 0000 0000"
     private var adminCardOwner = "HASAN JAYLOVOV"
 
-    // Navigation & Sub-tabs states (PDF Parity)
     private var currentBottomTab = 0
-    private var currentHomeSubTab = 0 // 0=Mijozlar, 1=Ta'minotchilar, 2=Xodimlar
+    private var currentHomeSubTab = 0
     private var currentSortMode = "Faol"
     private var searchQuery = ""
 
-    // Kassa states (PDF page 13)
-    private var kassaTypeTab = "Xarajatlar" // Xarajatlar | Kirimlar
-    private var kassaPayFilter = "Hammasi" // Hammasi | Naqd | Boshqa
-    private var kassaPeriodFilter = "Barchasi" // 14 kun | Shu oy | 30 kun | 1 yil | Barchasi
+    private var kassaTypeTab = "Xarajatlar"
+    private var kassaPayFilter = "Hammasi"
+    private var kassaPeriodFilter = "Barchasi"
 
-    // Mahsulot states (PDF page 14-20)
-    private var mahsulotTopTab = "Ombor" // Sotuv | Ombor | Qaytarish | Kirimlar
-    private var mahsulotFilterTab = "Barchasi" // Barchasi | Mavjud | Tugagan
+    private var mahsulotTopTab = "Ombor"
+    private var mahsulotFilterTab = "Barchasi"
 
-    // Statistika states (PDF page 24-29)
-    private var statTopTab = "Mijozlar" // Mijozlar | Ta'minotchilar | Mahsulotlar | Xodimlar
-    private var statProdSubTab = "Qoldiq" // Sotuv | Qoldiq | Kirim
+    private var statTopTab = "Mijozlar"
+    private var statProdSubTab = "Qoldiq"
 
-    // Chap va O'ng yarim ko'rinuvchi slide panellar holati
     private var isLeftEdgeOpen = false
     private var isRightEdgeOpen = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Telegram va boshqa ilovalarga fayl ulashishda FileUriExposedException chiqmasligi uchun:
+        val builder = StrictMode.VmPolicy.Builder()
+        StrictMode.setVmPolicy(builder.build())
+
         setContentView(R.layout.activity_main)
 
-        ActivityCompat.requestPermissions(
-            this,
-            arrayOf(Manifest.permission.SEND_SMS, Manifest.permission.READ_PHONE_STATE),
-            100
-        )
+        val perms = mutableListOf(Manifest.permission.SEND_SMS, Manifest.permission.READ_PHONE_STATE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            perms.add(Manifest.permission.POST_NOTIFICATIONS)
+        } else if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+            perms.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            perms.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        ActivityCompat.requestPermissions(this, perms.toTypedArray(), 100)
 
-        prefs = getSharedPreferences("QarzFyGlossyV7Prefs", Context.MODE_PRIVATE)
+        // DOIMIY O'ZGARulMAS PREFS NOMI
+        prefs = getSharedPreferences("QarzFyMasterPermanentPrefs", Context.MODE_PRIVATE)
         db = QarzFyDatabase(this)
+        db.migrateOldDatabasesIfNeeded()
+
         rootLayout = findViewById(R.id.mainContentLayout)
 
-        loadPrefs()
+        loadPrefsAndRestoreSession()
 
-        if (userPhone.isBlank()) {
+        if (!isLoggedIn || userPhone.isBlank()) {
             renderOnboardingAndLogin()
         } else {
             checkServerSubscriptionAndRender()
@@ -376,13 +486,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (userPhone.isNotBlank()) {
+        if (isLoggedIn && userPhone.isNotBlank()) {
             checkServerSubscriptionAndRender()
         }
     }
 
-    private fun loadPrefs() {
+    private fun loadPrefsAndRestoreSession() {
+        isLoggedIn = prefs.getBoolean("is_logged_in", false)
         userPhone = prefs.getString("user_phone", "") ?: ""
+        userPassword = prefs.getString("user_password", "") ?: ""
         storeId = prefs.getString("store_id", "QF-101") ?: "QF-101"
         storeName = prefs.getString("store_name", "Hasan Jaylovov") ?: "Hasan Jaylovov"
         storeAddress = prefs.getString("store_address", "O'zbekiston") ?: "O'zbekiston"
@@ -394,6 +506,56 @@ class MainActivity : AppCompatActivity() {
         price6Month = prefs.getLong("price_6m", 255000L)
         adminCardNumber = prefs.getString("card_number", "9860 0000 0000 0000") ?: "9860 0000 0000 0000"
         adminCardOwner = prefs.getString("card_owner", "HASAN JAYLOVOV") ?: "HASAN JAYLOVOV"
+
+        // Agar eski versiyadan chiqib ketgan bo'lsa, SQLite users jadvalidan tiklaymiz
+        if (userPhone.isBlank()) {
+            val savedAcc = db.getLastSavedAccount()
+            if (savedAcc != null) {
+                userPhone = savedAcc["phone"] ?: ""
+                userPassword = savedAcc["password"] ?: ""
+                storeId = savedAcc["store_id"] ?: "QF-101"
+                storeName = savedAcc["store_name"] ?: "Hasan Jaylovov"
+                storeAddress = savedAcc["store_address"] ?: "O'zbekiston"
+                storeCategory = savedAcc["store_category"] ?: "Umumiy"
+                mainCurrency = savedAcc["currency"] ?: "UZS"
+                subscriptionExpiryMillis = savedAcc["sub_expiry"]?.toLongOrNull() ?: (System.currentTimeMillis() + 864000000L)
+            }
+        }
+    }
+
+    private fun saveSessionSynchronously(loggedIn: Boolean) {
+        isLoggedIn = loggedIn
+        prefs.edit()
+            .putBoolean("is_logged_in", loggedIn)
+            .putString("user_phone", userPhone)
+            .putString("user_password", userPassword)
+            .putString("store_id", storeId)
+            .putString("store_name", storeName)
+            .putString("store_address", storeAddress)
+            .putString("store_category", storeCategory)
+            .putString("main_currency", mainCurrency)
+            .putLong("sub_expiry_millis", subscriptionExpiryMillis)
+            .commit() // commit() darhol xotiraga yozilishini kafolatlaydi!
+
+        if (userPhone.isNotBlank()) {
+            db.saveAccount(userPhone, userPassword, storeId, storeName, storeAddress, storeCategory, mainCurrency, subscriptionExpiryMillis)
+        }
+    }
+
+    private fun performLogout() {
+        AlertDialog.Builder(this)
+            .setTitle("🚪 Hisobdan chiqish")
+            .setMessage("Haqiqatan ham hisobingizdan chiqmoqchimisiz?\n\nBarcha mijozlar, qarzlar va kassa ma'lumotlaringiz telefon xotirasida 100% saqlanib qoladi. Qayta kirganingizda hammasi joyida turadi!")
+            .setPositiveButton("Chiqish") { _, _ ->
+                prefs.edit().putBoolean("is_logged_in", false).commit()
+                isLoggedIn = false
+                isLeftEdgeOpen = false
+                isRightEdgeOpen = false
+                Toast.makeText(this, "Hisobdan chiqildi. Ma'lumotlaringiz saqlangan!", Toast.LENGTH_SHORT).show()
+                renderOnboardingAndLogin()
+            }
+            .setNegativeButton("Bekor qilish", null)
+            .show()
     }
 
     // ==================== GLOSSY GLASSMORPHISM DRAWABLES ====================
@@ -420,6 +582,16 @@ class MainActivity : AppCompatActivity() {
         return GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
             intArrayOf(Color.parseColor("#FB923C"), Color.parseColor("#F97316"), Color.parseColor("#EA580C"))
+        ).apply {
+            cornerRadius = rad
+            setStroke(3, Color.parseColor("#B3FFFFFF"))
+        }
+    }
+
+    private fun glossyRedGrad(rad: Float = 38f): GradientDrawable {
+        return GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.parseColor("#EF4444"), Color.parseColor("#DC2626"))
         ).apply {
             cornerRadius = rad
             setStroke(3, Color.parseColor("#B3FFFFFF"))
@@ -493,7 +665,7 @@ class MainActivity : AppCompatActivity() {
                     subscriptionExpiryMillis = serverExpiry
                     editor.putLong("sub_expiry_millis", subscriptionExpiryMillis)
                 }
-                editor.apply()
+                editor.commit()
 
                 withContext(Dispatchers.Main) {
                     if (!serverActive && System.currentTimeMillis() > subscriptionExpiryMillis) {
@@ -528,7 +700,7 @@ class MainActivity : AppCompatActivity() {
                 val baseTime = if (subscriptionExpiryMillis > now) subscriptionExpiryMillis else now
                 val addedMillis = months.toLong() * 30L * 24L * 60L * 60L * 1000L
                 subscriptionExpiryMillis = baseTime + addedMillis
-                prefs.edit().putLong("sub_expiry_millis", subscriptionExpiryMillis).apply()
+                saveSessionSynchronously(true)
 
                 Toast.makeText(this, "✅ +$months oy obuna vaqti qo'shildi!", Toast.LENGTH_LONG).show()
                 renderMainWorkspace()
@@ -588,6 +760,13 @@ class MainActivity : AppCompatActivity() {
         card.addView(tariffButton("👑 6 Oy — ${formatMoney(price6Month, "so'm")}", "+180 kun qo'shiladi", "#059669") {
             selectTariffAndPayDialog(6, price6Month)
         })
+        card.addView(Button(this).apply {
+            text = "🚪 Hisobdan chiqish"
+            setTextColor(Color.WHITE)
+            background = glossyRedGrad(32f)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 120).apply { topMargin = 12 }
+            setOnClickListener { performLogout() }
+        })
 
         col.addView(card)
         scroll.addView(col)
@@ -618,14 +797,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ==================== 1. ONBOARDING VA LOGIN ====================
+    // ==================== 1. KIRISH (LOGIN) VA RO'YXATDAN O'TISH EKRANI ====================
     private fun renderOnboardingAndLogin() {
         rootLayout.removeAllViews()
         rootLayout.setBackgroundColor(Color.parseColor("#EEF2FF"))
         val scroll = ScrollView(this)
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(44, 60, 44, 60)
+            setPadding(44, 50, 44, 60)
             gravity = Gravity.CENTER_HORIZONTAL
         }
 
@@ -633,24 +812,24 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             background = glossyPurpleGrad(54f)
-            setPadding(44, 50, 44, 50)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 28 }
+            setPadding(44, 44, 44, 44)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 24 }
         }
         heroCard.addView(ImageView(this).apply {
             setImageResource(R.drawable.ic_qarzdaftar_logo)
-            layoutParams = LinearLayout.LayoutParams(180, 180).apply { bottomMargin = 16 }
+            layoutParams = LinearLayout.LayoutParams(170, 170).apply { bottomMargin = 14 }
         })
         heroCard.addView(TextView(this).apply {
-            text = "QarzFy bular uchun yaratilgan!"
+            text = "QarzFy Tizimiga Xush Kelibsiz!"
             setTextColor(Color.WHITE)
-            textSize = 21f
+            textSize = 20f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
         })
         heroCard.addView(TextView(this).apply {
-            text = "Mijozlar, ta'minotchilar, ombor va kassa — hammasini bir joyda Glossy Glassmorphism uslubida boshqaring."
+            text = "Ma'lumotlaringiz doimiy xotirada saqlanadi. Mavjud hisobingizga kiring yoki yangi do'kon oching."
             setTextColor(Color.parseColor("#E0E7FF"))
-            textSize = 13f
+            textSize = 12.5f
             gravity = Gravity.CENTER
             setPadding(10, 8, 10, 0)
         })
@@ -664,25 +843,88 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }
 
-        val etStore = makeGlassInput("Do'kon nomi * (Masalan: Hasan Jaylovov)", storeName)
-        val etAddr = makeGlassInput("Manzil (O'zbekiston, Surxondaryo)", storeAddress)
-        val etPhone = makeGlassInput("Telefon raqam (+998909958297)", "+998")
-        etPhone.inputType = InputType.TYPE_CLASS_PHONE
-        val etPass = makeGlassInput("Parol (Admin panel uchun)", "")
-        etPass.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        val savedAcc = db.getLastSavedAccount()
+        val initPhone = if (userPhone.isNotBlank()) userPhone else (savedAcc?.get("phone") ?: "+998")
+        val initStore = if (storeName.isNotBlank()) storeName else (savedAcc?.get("store_name") ?: "Hasan Jaylovov")
+        val initAddr = if (storeAddress.isNotBlank()) storeAddress else (savedAcc?.get("store_address") ?: "O'zbekiston, Surxondaryo")
 
-        formCard.addView(etStore)
-        formCard.addView(etAddr)
+        val etPhone = makeGlassInput("Telefon raqam (+998909958297) *", initPhone)
+        etPhone.inputType = InputType.TYPE_CLASS_PHONE
+        val etPass = makeGlassInput("Parol *", userPassword)
+        etPass.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        val etStore = makeGlassInput("Do'kon nomi (Yangi ro'yxatdan o'tish uchun)", initStore)
+        val etAddr = makeGlassInput("Manzil", initAddr)
+
+        formCard.addView(TextView(this).apply {
+            text = "🔑 Telefon va Parol:"
+            setTextColor(Color.parseColor("#1E293B"))
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(4, 0, 4, 12)
+        })
         formCard.addView(etPhone)
         formCard.addView(etPass)
 
-        val btnStart = Button(this).apply {
-            text = "🚀 Boshlash (10 kun bepul Premium)"
+        // 1-TUGMA: MAVJUD HISOBGA KIRISH (Ma'lumotlari saqlangan holda!)
+        val btnLoginExisting = Button(this).apply {
+            text = "🔑 Mavjud Hisobga Kirish"
             setTextColor(Color.WHITE)
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
             background = glossyPurpleGrad(36f)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 135).apply { topMargin = 16 }
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 130).apply { topMargin = 8; bottomMargin = 20 }
+            setOnClickListener {
+                val ph = etPhone.text.toString().trim()
+                val pw = etPass.text.toString().trim()
+                if (ph.length < 9 || pw.isEmpty()) {
+                    Toast.makeText(this@MainActivity, "Telefon raqam va parolni kiriting!", Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
+                val acc = db.findAccount(ph)
+                userPhone = ph
+                userPassword = pw
+                if (acc != null) {
+                    storeId = acc["store_id"] ?: ("QF-" + Math.abs(ph.hashCode() % 90000 + 10000))
+                    storeName = acc["store_name"] ?: etStore.text.toString().trim().ifEmpty { "Do'kon" }
+                    storeAddress = acc["store_address"] ?: etAddr.text.toString().trim()
+                    storeCategory = acc["store_category"] ?: "Qurilish mollari"
+                    val savedExp = acc["sub_expiry"]?.toLongOrNull() ?: 0L
+                    if (savedExp > subscriptionExpiryMillis) subscriptionExpiryMillis = savedExp
+                } else {
+                    storeName = etStore.text.toString().trim().ifEmpty { "Hasan Jaylovov" }
+                    storeAddress = etAddr.text.toString().trim().ifEmpty { "O'zbekiston" }
+                    storeId = "QF-" + Math.abs(ph.hashCode() % 90000 + 10000)
+                    if (subscriptionExpiryMillis <= 0L) {
+                        subscriptionExpiryMillis = System.currentTimeMillis() + (10L * 24L * 60L * 60L * 1000L)
+                    }
+                }
+                saveSessionSynchronously(true)
+                syncStoreWithAdminServer(userPhone, userPassword)
+                Toast.makeText(this@MainActivity, "✅ Xush kelibsiz, $storeName! Barcha ma'lumotlaringiz tiklandi.", Toast.LENGTH_SHORT).show()
+                renderMainWorkspace()
+                scheduleMidnightAutoExcelSaveWithSignal()
+            }
+        }
+        formCard.addView(btnLoginExisting)
+
+        formCard.addView(TextView(this).apply {
+            text = "🏪 Yangi Do'kon Ma'lumotlari:"
+            setTextColor(Color.parseColor("#475569"))
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(4, 8, 4, 10)
+        })
+        formCard.addView(etStore)
+        formCard.addView(etAddr)
+
+        // 2-TUGMA: YANGI RO'YXATDAN O'TISH
+        val btnRegisterNew = Button(this).apply {
+            text = "🚀 Yangi Ro'yxatdan O'tish (10 kun bepul)"
+            setTextColor(Color.WHITE)
+            textSize = 14.5f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyOrangeGrad(36f)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 130).apply { topMargin = 8 }
             setOnClickListener {
                 val ph = etPhone.text.toString().trim()
                 val pw = etPass.text.toString().trim()
@@ -692,30 +934,23 @@ class MainActivity : AppCompatActivity() {
                     return@setOnClickListener
                 }
                 userPhone = ph
+                userPassword = pw
                 storeName = st
                 storeAddress = etAddr.text.toString().trim()
                 storeId = "QF-" + Math.abs(ph.hashCode() % 90000 + 10000)
-                subscriptionExpiryMillis = System.currentTimeMillis() + (10L * 24L * 60L * 60L * 1000L)
-
-                prefs.edit()
-                    .putString("user_phone", userPhone)
-                    .putString("store_id", storeId)
-                    .putString("store_name", storeName)
-                    .putString("store_address", storeAddress)
-                    .putLong("sub_expiry_millis", subscriptionExpiryMillis)
-                    .apply()
-
-                if (db.getPersons(false).isEmpty()) {
-                    db.upsertClientDirect("Hasan toga", "+998 90 995 82 97", 0.0, -20000L, db.nowStr(), false)
-                    db.upsertClientDirect("Nortoy oshna", "+998 93 363 97 12", 0.0, 0L, db.nowStr(), false)
+                if (subscriptionExpiryMillis <= System.currentTimeMillis()) {
+                    subscriptionExpiryMillis = System.currentTimeMillis() + (10L * 24L * 60L * 60L * 1000L)
                 }
 
+                saveSessionSynchronously(true)
                 syncStoreWithAdminServer(ph, pw)
+                Toast.makeText(this@MainActivity, "✅ Ro'yxatdan o'tdingiz va ma'lumotlar saqlandi!", Toast.LENGTH_SHORT).show()
                 renderMainWorkspace()
                 scheduleMidnightAutoExcelSaveWithSignal()
             }
         }
-        formCard.addView(btnStart)
+        formCard.addView(btnRegisterNew)
+
         container.addView(formCard)
         scroll.addView(container)
         rootLayout.addView(scroll)
@@ -772,8 +1007,6 @@ class MainActivity : AppCompatActivity() {
             else -> buildProfilTab()
         }
         mainFrame.addView(pageView)
-
-        // CHAP VA O'NG TOMONDA SAL KO'RINUVCHI SLIDE/ROUND TUGMALAR PANELI
         mainFrame.addView(buildLeftAndRightEdgeSlideOverlays())
 
         rootLayout.addView(mainFrame)
@@ -787,7 +1020,6 @@ class MainActivity : AppCompatActivity() {
 
         val isSup = (currentBottomTab == 0 && currentHomeSubTab == 1)
 
-        // Fon qorayishi (agar chap yoki o'ng menyu ochiq bo'lsa)
         if (isLeftEdgeOpen || isRightEdgeOpen) {
             overlay.setBackgroundColor(Color.parseColor("#550F172A"))
             overlay.setOnClickListener {
@@ -797,7 +1029,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 1) CHAP TOMONDAGI SAL KO'RINUVCHI KICHIK DUMALOQ TUGMA (O'ngga slide qilganda yoki bosganda 4 ta round tugma chiqadi)
+        // CHAP TOMONDAGI SAL KO'RINUVCHI KICHIK DUMALOQ TUGMA
         if (!isLeftEdgeOpen) {
             val leftPeekTab = TextView(this).apply {
                 text = "❯"
@@ -806,10 +1038,10 @@ class MainActivity : AppCompatActivity() {
                 textSize = 18f
                 setTypeface(null, Typeface.BOLD)
                 background = glossyPurpleGrad(60f)
-                alpha = 0.78f
+                alpha = 0.82f
                 elevation = 16f
                 layoutParams = FrameLayout.LayoutParams(96, 150, Gravity.CENTER_VERTICAL or Gravity.START).apply {
-                    leftMargin = -34 // Ekrandan sal chiqib turadi
+                    leftMargin = -34
                 }
                 var startX = 0f
                 setOnTouchListener { _, ev ->
@@ -835,7 +1067,6 @@ class MainActivity : AppCompatActivity() {
             }
             overlay.addView(leftPeekTab)
         } else {
-            // Chap menyu ochilganda o'ngga siljib chiqqan 4 ta ROUND 3D tugma (2-rasmdagidek)
             val leftCol = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.START
@@ -861,13 +1092,11 @@ class MainActivity : AppCompatActivity() {
                     setOnClickListener {
                         isLeftEdgeOpen = false
                         renderMainWorkspace()
-                        it.post {
-                            when (labelText) {
-                                "Excel Import" -> showImportBottomSheet()
-                                "Excel Eksport" -> showExportBottomSheet()
-                                "Tezkor tranzaksiya" -> showQuickTransactionBottomSheet(isSup)
-                                else -> showAddClientBottomSheet(isSup)
-                            }
+                        when (labelText) {
+                            "Excel Import" -> showImportBottomSheet()
+                            "Excel Eksport" -> showExportBottomSheet()
+                            "Tezkor tranzaksiya" -> showQuickTransactionBottomSheet(isSup)
+                            else -> showAddClientBottomSheet(isSup)
                         }
                     }
                 }
@@ -897,7 +1126,7 @@ class MainActivity : AppCompatActivity() {
             overlay.addView(leftCol)
         }
 
-        // 2) O'NG TOMONDAGI SAL KO'RINUVCHI KICHIK DUMALOQ TUGMA (Chapga slide qilganda 1-rasmdagi menyu round bo'lib chiqadi)
+        // O'NG TOMONDAGI SAL KO'RINUVCHI KICHIK DUMALOQ TUGMA
         if (!isRightEdgeOpen) {
             val rightPeekTab = TextView(this).apply {
                 text = "❮"
@@ -906,10 +1135,10 @@ class MainActivity : AppCompatActivity() {
                 textSize = 18f
                 setTypeface(null, Typeface.BOLD)
                 background = glossyPurpleGrad(60f)
-                alpha = 0.78f
+                alpha = 0.82f
                 elevation = 16f
                 layoutParams = FrameLayout.LayoutParams(96, 150, Gravity.CENTER_VERTICAL or Gravity.END).apply {
-                    rightMargin = -34 // O'ng chetdan sal ko'rinib turadi
+                    rightMargin = -34
                 }
                 var startX = 0f
                 setOnTouchListener { _, ev ->
@@ -935,7 +1164,6 @@ class MainActivity : AppCompatActivity() {
             }
             overlay.addView(rightPeekTab)
         } else {
-            // O'ng menyu ochilganda 1-rasmdagi Kalkulyator, Bozorlik, Vazifalar, Sotuv, SMS jo'natma, Qo'ng'iroq ROUND shaklda chiqadi
             val rightCol = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.END
@@ -1051,7 +1279,6 @@ class MainActivity : AppCompatActivity() {
         header.addView(qrBtn)
         col.addView(header)
 
-        // Glossy Purple Banner
         val banner = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1080,7 +1307,6 @@ class MainActivity : AppCompatActivity() {
         })
         col.addView(banner)
 
-        // Mijozlar | Ta'minotchilar | Xodimlar
         val tabsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 18 }
@@ -1185,7 +1411,7 @@ class MainActivity : AppCompatActivity() {
                 setPadding(40, 70, 40, 70)
             }
             emptyBox.addView(TextView(this).apply {
-                text = if (isSup) "Ta'minotchi topilmadi" else "Qarz yuritishni boshlash uchun birinchi mijozingizni qo'shing"
+                text = if (isSup) "Ta'minotchi topilmadi" else "Qarz yuritishni boshlash uchun birinchi mijozingizni qo'shing yoki chapdagi ❯ tugmadan Excel Import qiling"
                 setTextColor(Color.parseColor("#64748B"))
                 textSize = 14f
                 gravity = Gravity.CENTER
@@ -1266,7 +1492,7 @@ class MainActivity : AppCompatActivity() {
         return scroll
     }
 
-    // ==================== TAB 1: KASSA (PDF 13-bet bilan 100% bir xil!) ====================
+    // ==================== TAB 1: KASSA ====================
     private fun buildKassaTab(): View {
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply {
@@ -1282,7 +1508,6 @@ class MainActivity : AppCompatActivity() {
         }
         val netBal = kirimSum - chiqimSum
 
-        // PDF 13-bet Top Row: 📈 Round Icon | +0 UZS ⓘ | UZS ▾
         val topRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1314,7 +1539,6 @@ class MainActivity : AppCompatActivity() {
         })
         col.addView(topRow)
 
-        // PDF 13-bet: Xarajatlar | Kirimlar pill switch
         val switchBox = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             background = glossyCard("#FFFFFF", "#E2E8F0", 50f)
@@ -1341,7 +1565,6 @@ class MainActivity : AppCompatActivity() {
         }
         col.addView(switchBox)
 
-        // PDF 13-bet: 📊 Round Icon | 0 UZS ⓘ | ⚙️ Filter Round Icon
         val activeSum = if (kassaTypeTab == "Xarajatlar") chiqimSum else kirimSum
         val midRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1376,7 +1599,6 @@ class MainActivity : AppCompatActivity() {
         })
         col.addView(midRow)
 
-        // PDF 13-bet: Hammasi | Naqd | Boshqa
         val payFilterRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 16 }
@@ -1396,7 +1618,6 @@ class MainActivity : AppCompatActivity() {
         }
         col.addView(payFilterRow)
 
-        // PDF 13-bet: 14 kun | Shu oy | 30 kun | 1 yil | Barchasi
         val periodScroll = HorizontalScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 24 }
         }
@@ -1417,7 +1638,6 @@ class MainActivity : AppCompatActivity() {
         periodScroll.addView(periodRow)
         col.addView(periodScroll)
 
-        // Kirim / Chiqim qo'shish tugmalari
         val actionRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 22 }
@@ -1468,7 +1688,7 @@ class MainActivity : AppCompatActivity() {
         return scroll
     }
 
-    // ==================== TAB 2: MAHSULOT VA OMBOR (PDF 14-20 betlar bilan 100% bir xil!) ====================
+    // ==================== TAB 2: MAHSULOT VA OMBOR ====================
     private fun buildMahsulotTab(): View {
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply {
@@ -1476,7 +1696,6 @@ class MainActivity : AppCompatActivity() {
             setPadding(32, 32, 32, 180)
         }
 
-        // PDF 14-15 betlar: Sotuv | Ombor | Qaytarish / Hisobdan chiqarish | Kirimlar
         val topGrid1 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 12 }
@@ -1517,7 +1736,6 @@ class MainActivity : AppCompatActivity() {
         }
         col.addView(topGrid2)
 
-        // Mahsulot qidirish + QR + Plus
         val searchRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1541,7 +1759,6 @@ class MainActivity : AppCompatActivity() {
 
         val prods = db.getProducts()
 
-        // Barchasi | 0 Mahsulot | Mavjud | Tugagan (PDF 15-bet)
         val filterChips = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 20 }
@@ -1602,7 +1819,6 @@ class MainActivity : AppCompatActivity() {
         return scroll
     }
 
-    // PDF 16-betdagi 5 ta Mahsulot Slide-up menyusi
     private fun showMahsulotActionsBottomSheet() {
         val sheet = BottomSheetDialog(this)
         val wrap = LinearLayout(this).apply {
@@ -1635,7 +1851,7 @@ class MainActivity : AppCompatActivity() {
         sheet.show()
     }
 
-    // ==================== TAB 3: STATISTIKA (PDF 24-29 betlar bilan 100% bir xil!) ====================
+    // ==================== TAB 3: STATISTIKA ====================
     private fun buildStatistikaTab(): View {
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply {
@@ -1643,7 +1859,6 @@ class MainActivity : AppCompatActivity() {
             setPadding(32, 32, 32, 180)
         }
 
-        // PDF 24-28 betlar Top Tabs: Mijozlar | Ta'minotchilar | Mahsulotlar | Xodimlar
         val topTabs = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             background = glossyCard("#FFFFFF", "#E2E8F0", 32f)
@@ -1667,7 +1882,6 @@ class MainActivity : AppCompatActivity() {
         col.addView(topTabs)
 
         if (statTopTab == "Mahsulotlar") {
-            // PDF 26-27 betlar: Sotuv | Qoldiq | Kirim + Ombor qiymati Binafsha Karta
             val subRow = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 20 }
@@ -1718,7 +1932,6 @@ class MainActivity : AppCompatActivity() {
             })
             col.addView(purpleCard)
 
-            // Tugagan / Tugayotgan / O'lik tovar (PDF 27-bet)
             val statusGrid = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -1740,7 +1953,6 @@ class MainActivity : AppCompatActivity() {
             return scroll
         }
 
-        // Mijozlar / Ta'minotchilar Statistika (PDF 24-25 betlar)
         val isSup = (statTopTab == "Ta'minotchilar")
         val persons = db.getPersons(isSup)
         var jamiQarz = 0L
@@ -1782,7 +1994,7 @@ class MainActivity : AppCompatActivity() {
         return scroll
     }
 
-    // ==================== TAB 4: PROFIL ====================
+    // ==================== TAB 4: PROFIL VA LOG OUT ====================
     private fun buildProfilTab(): View {
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply {
@@ -1799,7 +2011,7 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 20 }
         }
         val profAvatar = TextView(this).apply {
-            text = "👤\nBepul"
+            text = "👤\nFaol"
             gravity = Gravity.CENTER
             textSize = 12f
             setTextColor(Color.WHITE)
@@ -1818,7 +2030,7 @@ class MainActivity : AppCompatActivity() {
             setTypeface(null, Typeface.BOLD)
         })
         profInfo.addView(TextView(this).apply {
-            text = "$userPhone  •  Biznes egasi"
+            text = "$userPhone  •  ID: $storeId"
             setTextColor(Color.parseColor("#64748B"))
             textSize = 13f
         })
@@ -1886,6 +2098,19 @@ class MainActivity : AppCompatActivity() {
             })
         }
 
+        // LOG OUT (HISOBDAN CHIQISH) TUGMASI (PDF 34-betdagidek)
+        val btnLogout = Button(this).apply {
+            text = "🚪 Hisobdan chiqish (Log Out)"
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyRedGrad(36f)
+            elevation = 8f
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 135).apply { topMargin = 16; bottomMargin = 20 }
+            setOnClickListener { performLogout() }
+        }
+        col.addView(btnLogout)
+
         scroll.addView(col)
         return scroll
     }
@@ -1944,19 +2169,19 @@ class MainActivity : AppCompatActivity() {
         return bar
     }
 
-    // ==================== 3. HAQIQIY .XLSX GENERATOR + QarzFy PAPKAGA 00:00 AVTO SAQLASH VA SIGNAL ====================
+    // ==================== 3. HAQIQIY .XLSX GENERATOR + QarzFy PAPKAGA SAQLASH VA TELEGRAM ULASHISH ====================
     private fun saveRealXlsxToQarzFyFolder(): Pair<File, String> {
         val dateTag = SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.getDefault()).format(Date())
-        val fileName = "QarzFy_Hisobot_$dateTag.xlsx"
+        val fileName = "clients_export_$dateTag.xlsx"
 
-        val appSubDir = File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "QarzFy")
+        val appSubDir = File(getExternalFilesDir(null), "QarzFy")
         if (!appSubDir.exists()) appSubDir.mkdirs()
         val localXlsx = File(appSubDir, fileName)
 
         val xlsxBytes = generateRealXlsxZipBytes()
         localXlsx.writeBytes(xlsxBytes)
 
-        var publicPath = "Download/QarzFy/$fileName"
+        var publicPath = "/storage/emulated/0/Download/QarzFy/$fileName"
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val values = ContentValues().apply {
@@ -1971,9 +2196,13 @@ class MainActivity : AppCompatActivity() {
             } else {
                 val pubDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "QarzFy")
                 if (!pubDir.exists()) pubDir.mkdirs()
-                File(pubDir, fileName).writeBytes(xlsxBytes)
+                val pubFile = File(pubDir, fileName)
+                pubFile.writeBytes(xlsxBytes)
+                publicPath = pubFile.absolutePath
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+            publicPath = localXlsx.absolutePath
+        }
 
         return Pair(localXlsx, publicPath)
     }
@@ -1997,7 +2226,6 @@ class MainActivity : AppCompatActivity() {
         return sb.toString()
     }
 
-    // Haqiqiy 6-varaqqa ega .xlsx (OpenXML) fayl generatori!
     private fun generateRealXlsxZipBytes(): ByteArray {
         val clients = db.getPersons(false)
         val clientTxs = db.getTransactions(false)
@@ -2100,8 +2328,8 @@ class MainActivity : AppCompatActivity() {
             }
             val notif = NotificationCompat.Builder(this, chId)
                 .setSmallIcon(R.drawable.ic_qarzdaftar_logo)
-                .setContentTitle("📊 QarzFy Kunlik Excel Saqlandi!")
-                .setContentText("Fayl: $savedPath")
+                .setContentTitle("📊 QarzFy Excel (.xlsx) Saqlandi!")
+                .setContentText("Manzil: $savedPath")
                 .setAutoCancel(true)
                 .build()
             nm.notify(1001, notif)
@@ -2127,16 +2355,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun shareExcelFileToTelegram(file: File) {
         try {
-            val uri = FileProvider.getUriForFile(this, "$packageName.provider", file)
+            val uri = Uri.fromFile(file)
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 putExtra(Intent.EXTRA_STREAM, uri)
                 putExtra(Intent.EXTRA_TEXT, "📊 QarzFy Rasmiy Excel Hisobot (.xlsx)\n🏪 Do'kon: $storeName ($storeId)")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            startActivity(Intent.createChooser(intent, "Excel (.xlsx) faylni Telegramga yuborish"))
+            startActivity(Intent.createChooser(intent, "Excel (.xlsx) faylni yuborish"))
         } catch (e: Exception) {
-            Toast.makeText(this, "Saqlangan joyi: Download/QarzFy/${file.name}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Fayl saqlandi: Download/QarzFy/${file.name}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -2156,7 +2384,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 0, 0, 12)
         })
         wrap.addView(TextView(this).apply {
-            text = "Hisobot haqiqiy 6-betli Excel (.xlsx) formatda telefon xotirasidagi 'Download/QarzFy' papkasiga saqlanadi. Har kuni 00:00 da signal bilan avtomatik saqlanadi!"
+            text = "Hisobot haqiqiy 6-varaqqa ega Excel (.xlsx) formatda telefon xotirasidagi 'Download/QarzFy' papkasiga saqlanadi hamda har kuni 00:00 da signal bilan avtomatik yoziladi!"
             setTextColor(Color.parseColor("#475569"))
             textSize = 13f
             setPadding(0, 0, 0, 24)
@@ -2173,7 +2401,7 @@ class MainActivity : AppCompatActivity() {
                 sheet.dismiss()
                 AlertDialog.Builder(this@MainActivity)
                     .setTitle("✅ Excel (.xlsx) Saqlandi!")
-                    .setMessage("Papka va fayl:\n$savedPath")
+                    .setMessage("Fayl nomi:\n${file.name}\n\nSaqlangan joyi:\n$savedPath")
                     .setPositiveButton("📤 Faylni Telegramga Yuborish") { _, _ ->
                         shareExcelFileToTelegram(file)
                     }
@@ -2207,11 +2435,17 @@ class MainActivity : AppCompatActivity() {
             setPadding(44, 30, 44, 56)
         }
         wrap.addView(TextView(this).apply {
-            text = "📥 Excel (.xlsx) Fayldan Import"
+            text = "📥 Excel (.xlsx / .csv) Fayldan Import"
             setTextColor(Color.parseColor("#0F172A"))
             textSize = 19f
             setTypeface(null, Typeface.BOLD)
             setPadding(0, 0, 0, 12)
+        })
+        wrap.addView(TextView(this).apply {
+            text = "clients_export.xlsx faylini tanlang. Ichidagi barcha 6 ta varaq (Mijozlar, Tranzaksiyalar, Ta'minotchilar, Kassa) avtomatik o'qiladi va saqlanadi!"
+            setTextColor(Color.parseColor("#475569"))
+            textSize = 13f
+            setPadding(0, 0, 0, 20)
         })
         wrap.addView(Button(this).apply {
             text = "📂 Telefondan Excel (.xlsx) Fayl Tanlash"
@@ -2283,7 +2517,7 @@ class MainActivity : AppCompatActivity() {
         wrap.addView(etAmount); wrap.addView(etNote)
 
         wrap.addView(Button(this).apply {
-            text = "To'lov qo'shish"
+            text = "To'lov qo'shish / Saqlash"
             setTextColor(Color.WHITE); background = glossyPurpleGrad(34f)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 135)
             setOnClickListener {
@@ -2402,7 +2636,7 @@ class MainActivity : AppCompatActivity() {
         sheet.show()
     }
 
-    // ==================== IMPORT .XLSX PARSER ====================
+    // ==================== 4. MUKAMMAL .XLSX (6-VARAQ) VA .CSV IMPORT PARSER ====================
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == PICK_IMPORT_FILE && resultCode == Activity.RESULT_OK) {
@@ -2414,13 +2648,102 @@ class MainActivity : AppCompatActivity() {
                     } else {
                         parseCsvSmartLines(String(bytes, Charsets.UTF_8).lines())
                     }
-                    Toast.makeText(this, "✅ $importedCount ta mijoz import qilindi!", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "✅ Jami $importedCount ta yozuv muvaffaqiyatli import qilindi va saqlandi!", Toast.LENGTH_LONG).show()
                     renderMainWorkspace()
                 } catch (e: Exception) {
-                    Toast.makeText(this, "Xatolik: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Import xatosi: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
+    }
+
+    private fun parseMoneyLong(s: String?): Long {
+        if (s == null) return 0L
+        val cleaned = s.replace("\"", "").replace(",", "").replace(" ", "").replace("UZS", "", true).trim()
+        return cleaned.toDoubleOrNull()?.toLong() ?: 0L
+    }
+
+    private fun parseMoneyDouble(s: String?): Double {
+        if (s == null) return 0.0
+        val cleaned = s.replace("\"", "").replace(",", "").replace(" ", "").trim()
+        return cleaned.toDoubleOrNull() ?: 0.0
+    }
+
+    private fun colIndexFromCellRef(ref: String?): Int {
+        if (ref.isNullOrEmpty()) return -1
+        var col = 0
+        for (ch in ref) {
+            if (ch in 'A'..'Z') {
+                col = col * 26 + (ch - 'A' + 1)
+            } else if (ch in 'a'..'z') {
+                col = col * 26 + (ch - 'a' + 1)
+            } else {
+                break
+            }
+        }
+        return col - 1
+    }
+
+    private fun parseSingleWorksheetXml(sheetBytes: ByteArray, sharedStrings: List<String>): List<List<String>> {
+        val parser = XmlPullParserFactory.newInstance().newPullParser()
+        parser.setInput(ByteArrayInputStream(sheetBytes), "UTF-8")
+        var event = parser.eventType
+        val rows = mutableListOf<List<String>>()
+        var currentRow = mutableListOf<String>()
+        var cellType = ""
+        var cellValue = StringBuilder()
+        var currentColIdx = -1
+        var insideVOrT = false
+
+        while (event != XmlPullParser.END_DOCUMENT) {
+            when (event) {
+                XmlPullParser.START_TAG -> {
+                    when (parser.name) {
+                        "row" -> currentRow = mutableListOf()
+                        "c" -> {
+                            cellType = parser.getAttributeValue(null, "t") ?: ""
+                            val rAttr = parser.getAttributeValue(null, "r")
+                            currentColIdx = colIndexFromCellRef(rAttr)
+                            cellValue = StringBuilder()
+                        }
+                        "v", "t" -> {
+                            insideVOrT = true
+                        }
+                    }
+                }
+                XmlPullParser.TEXT -> {
+                    if (insideVOrT) {
+                        cellValue.append(parser.text ?: "")
+                    }
+                }
+                XmlPullParser.END_TAG -> {
+                    when (parser.name) {
+                        "v", "t" -> insideVOrT = false
+                        "c" -> {
+                            val raw = cellValue.toString()
+                            val finalVal = if (cellType == "s") {
+                                val idx = raw.trim().toIntOrNull() ?: -1
+                                if (idx in sharedStrings.indices) sharedStrings[idx] else raw
+                            } else raw
+
+                            if (currentColIdx >= 0) {
+                                while (currentRow.size < currentColIdx) {
+                                    currentRow.add("")
+                                }
+                            }
+                            currentRow.add(finalVal)
+                        }
+                        "row" -> {
+                            if (currentRow.any { it.isNotBlank() }) {
+                                rows.add(currentRow)
+                            }
+                        }
+                    }
+                }
+            }
+            event = parser.next()
+        }
+        return rows
     }
 
     private fun parseXlsxZipBytes(bytes: ByteArray): Int {
@@ -2444,56 +2767,100 @@ class MainActivity : AppCompatActivity() {
             var event = parser.eventType
             var currentSi = StringBuilder()
             var insideSi = false
+            var insideT = false
             while (event != XmlPullParser.END_DOCUMENT) {
-                if (event == XmlPullParser.START_TAG && parser.name == "si") { insideSi = true; currentSi = StringBuilder() }
-                else if (event == XmlPullParser.START_TAG && parser.name == "t" && insideSi) currentSi.append(parser.nextText())
-                else if (event == XmlPullParser.END_TAG && parser.name == "si") { insideSi = false; sharedStrings.add(currentSi.toString()) }
+                when (event) {
+                    XmlPullParser.START_TAG -> {
+                        if (parser.name == "si") { insideSi = true; currentSi = StringBuilder() }
+                        else if (parser.name == "t" && insideSi) insideT = true
+                    }
+                    XmlPullParser.TEXT -> {
+                        if (insideSi && insideT) currentSi.append(parser.text ?: "")
+                    }
+                    XmlPullParser.END_TAG -> {
+                        if (parser.name == "t") insideT = false
+                        else if (parser.name == "si") { insideSi = false; sharedStrings.add(currentSi.toString()) }
+                    }
+                }
                 event = parser.next()
             }
         }
 
-        val sheetBytes = entries["xl/worksheets/sheet1.xml"] ?: return 0
-        val parser = XmlPullParserFactory.newInstance().newPullParser()
-        parser.setInput(ByteArrayInputStream(sheetBytes), "UTF-8")
-        var event = parser.eventType
-        val rows = mutableListOf<List<String>>()
-        var currentRow = mutableListOf<String>()
-        var cellType = ""
-        var cellValue = ""
+        var totalImported = 0
 
-        while (event != XmlPullParser.END_DOCUMENT) {
-            when (event) {
-                XmlPullParser.START_TAG -> {
-                    when (parser.name) {
-                        "row" -> currentRow = mutableListOf()
-                        "c" -> { cellType = parser.getAttributeValue(null, "t") ?: ""; cellValue = "" }
-                        "v", "t" -> {
-                            val raw = parser.nextText()
-                            cellValue = if (cellType == "s") {
-                                val idx = raw.toIntOrNull() ?: -1
-                                if (idx in sharedStrings.indices) sharedStrings[idx] else raw
-                            } else raw
-                        }
+        // 1-Varaq: Mijozlar (sheet1.xml)
+        entries["xl/worksheets/sheet1.xml"]?.let { sb ->
+            val rows = parseSingleWorksheetXml(sb, sharedStrings)
+            rows.forEachIndexed { idx, r ->
+                if (idx > 0 && r.size >= 2) {
+                    val name = r.getOrNull(1)?.trim() ?: ""
+                    val phone = r.getOrNull(2)?.trim() ?: ""
+                    val usd = parseMoneyDouble(r.getOrNull(3))
+                    val uzs = parseMoneyLong(r.getOrNull(4))
+                    val dt = r.getOrNull(5)?.trim() ?: db.nowStr()
+                    if (name.isNotEmpty() && !name.equals("Ism", true)) {
+                        db.upsertClientDirect(name, phone, usd, uzs, dt, false)
+                        totalImported++
                     }
                 }
-                XmlPullParser.END_TAG -> {
-                    if (parser.name == "c") currentRow.add(cellValue)
-                    else if (parser.name == "row" && currentRow.isNotEmpty()) rows.add(currentRow)
-                }
             }
-            event = parser.next()
         }
 
+        // 2-Varaq: Tranzaksiyalar (sheet2.xml)
+        entries["xl/worksheets/sheet2.xml"]?.let { sb ->
+            val rows = parseSingleWorksheetXml(sb, sharedStrings)
+            rows.forEachIndexed { idx, r ->
+                if (idx > 0 && r.size >= 5) {
+                    val txId = r.getOrNull(0)?.trim() ?: ""
+                    val kind = r.getOrNull(1)?.trim() ?: "Chiqim"
+                    val name = r.getOrNull(2)?.trim() ?: ""
+                    val phone = r.getOrNull(3)?.trim() ?: ""
+                    val amt = parseMoneyLong(r.getOrNull(4))
+                    val cur = r.getOrNull(5)?.trim() ?: "UZS"
+                    val dt = r.getOrNull(6)?.trim() ?: ""
+                    val note = r.getOrNull(7)?.trim() ?: ""
+                    if (name.isNotEmpty() && !name.equals("Mijoz ismi", true) && amt > 0) {
+                        db.insertTxDirect(txId, kind, name, phone, amt, cur, dt, note, "Faol", false)
+                    }
+                }
+            }
+        }
+
+        // 3-Varaq: Ta'minotchilar (sheet3.xml)
+        entries["xl/worksheets/sheet3.xml"]?.let { sb ->
+            val rows = parseSingleWorksheetXml(sb, sharedStrings)
+            rows.forEachIndexed { idx, r ->
+                if (idx > 0 && r.size >= 2) {
+                    val name = r.getOrNull(1)?.trim() ?: ""
+                    val phone = r.getOrNull(2)?.trim() ?: ""
+                    val usd = parseMoneyDouble(r.getOrNull(3))
+                    val uzs = parseMoneyLong(r.getOrNull(4))
+                    val dt = r.getOrNull(6)?.trim() ?: db.nowStr()
+                    if (name.isNotEmpty() && !name.equals("Ism", true)) {
+                        db.upsertClientDirect(name, phone, usd, uzs, dt, true)
+                        totalImported++
+                    }
+                }
+            }
+        }
+
+        return totalImported
+    }
+
+    private fun parseCsvSmartLines(lines: List<String>): Int {
         var count = 0
-        rows.forEachIndexed { idx, r ->
-            if (idx > 0 && r.size >= 3) {
-                val name = r.getOrNull(1)?.trim() ?: ""
-                val phone = r.getOrNull(2)?.trim() ?: ""
-                val usd = r.getOrNull(3)?.replace(",", "")?.trim()?.toDoubleOrNull() ?: 0.0
-                val uzs = r.getOrNull(4)?.replace(",", "")?.replace(" ", "")?.trim()?.toDoubleOrNull()?.toLong() ?: 0L
-                val dt = r.getOrNull(5)?.trim() ?: db.nowStr()
-                if (name.isNotEmpty() && !name.equals("Ism", true)) {
-                    db.upsertClientDirect(name, phone, usd, uzs, dt, false)
+        lines.forEach { raw ->
+            val l = raw.replace("\uFEFF", "").trim()
+            if (l.isEmpty() || l.startsWith("ID") || l.startsWith("===") || l.startsWith("Tranzaksiya")) return@forEach
+            val cols = splitCsvRespectingQuotes(l)
+            if (cols.size >= 3) {
+                val n = cols.getOrNull(1)?.trim() ?: ""
+                val p = cols.getOrNull(2)?.trim() ?: ""
+                val usd = parseMoneyDouble(cols.getOrNull(3))
+                val uzs = parseMoneyLong(cols.getOrNull(4))
+                val dt = cols.getOrNull(5)?.trim() ?: db.nowStr()
+                if (n.isNotEmpty() && !n.equals("Ism", true)) {
+                    db.upsertClientDirect(n, p, usd, uzs, dt, false)
                     count++
                 }
             }
@@ -2501,23 +2868,22 @@ class MainActivity : AppCompatActivity() {
         return count
     }
 
-    private fun parseCsvSmartLines(lines: List<String>): Int {
-        var count = 0
-        lines.forEach { raw ->
-            val l = raw.replace("\uFEFF", "").trim()
-            if (l.isEmpty() || l.startsWith("ID")) return@forEach
-            val parts = l.split(",")
-            if (parts.size >= 3) {
-                val n = parts[1].replace("\"", "").trim()
-                val p = parts[2].replace("\"", "").trim()
-                val uzs = parts.getOrNull(4)?.replace("\"", "")?.replace(" ", "")?.toLongOrNull() ?: 0L
-                if (n.isNotEmpty()) {
-                    db.upsertClientDirect(n, p, 0.0, uzs, db.nowStr(), false)
-                    count++
+    private fun splitCsvRespectingQuotes(line: String): List<String> {
+        val result = mutableListOf<String>()
+        val cur = StringBuilder()
+        var inQuotes = false
+        for (ch in line) {
+            when {
+                ch == '"' -> inQuotes = !inQuotes
+                (ch == ',' || ch == ';') && !inQuotes -> {
+                    result.add(cur.toString())
+                    cur.clear()
                 }
+                else -> cur.append(ch)
             }
         }
-        return count
+        result.add(cur.toString())
+        return result
     }
 
     // ==================== DIALOGLAR ====================
@@ -2648,7 +3014,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showDeveloperDialog() {
         AlertDialog.Builder(this).setTitle("👨‍💻 Dastur haqida")
-            .setMessage("Ilova: QarzFy v7.0 (Glossy Glassmorphism)\nDasturchi: Hasan Jaylovov\nTelegram: @HasanJaylovov")
+            .setMessage("Ilova: QarzFy v8.0 (Glossy Glassmorphism)\nDasturchi: Hasan Jaylovov\nTelegram: @HasanJaylovov")
             .setPositiveButton("Bog'lanish") { _, _ ->
                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/HasanJaylovov")))
             }.setNegativeButton("Yopish", null).show()
