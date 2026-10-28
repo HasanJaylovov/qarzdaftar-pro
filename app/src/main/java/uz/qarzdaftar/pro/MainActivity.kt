@@ -35,6 +35,10 @@ import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import android.view.inputmethod.InputMethodManager
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import kotlinx.coroutines.*
 import org.json.JSONArray
@@ -530,6 +534,9 @@ class MainActivity : AppCompatActivity() {
     private var userPassword = ""
     private var subscriptionExpiryMillis = 0L
     private var isAutoVoiceCallEnabled = true
+    private var appPinCode = ""
+    private var isBiometricEnabled = true
+    private var isPinUnlockedThisSession = false
 
     private var price1Month = 49000L
     private var price3Month = 135000L
@@ -597,6 +604,10 @@ class MainActivity : AppCompatActivity() {
 
         if (!isLoggedIn || userPhone.isBlank()) {
             renderOnboardingAndLogin()
+        } else if (appPinCode.length != 6) {
+            renderPinLockScreen(mode = "SETUP_NEW")
+        } else if (!isPinUnlockedThisSession) {
+            renderPinLockScreen(mode = "UNLOCK")
         } else {
             checkServerSubscriptionAndRender()
             scheduleMidnightAutoExcelSaveWithSignal()
@@ -606,7 +617,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (isLoggedIn && userPhone.isNotBlank()) {
+        if (isLoggedIn && userPhone.isNotBlank() && appPinCode.length == 6 && isPinUnlockedThisSession) {
             checkServerSubscriptionAndRender()
         }
     }
@@ -629,6 +640,8 @@ class MainActivity : AppCompatActivity() {
         mainCurrency = prefs.getString("main_currency", "UZS") ?: "UZS"
         subscriptionExpiryMillis = prefs.getLong("sub_expiry_millis", 0L)
         isAutoVoiceCallEnabled = prefs.getBoolean("auto_voice_call", true)
+        appPinCode = prefs.getString("app_pin_code", "") ?: ""
+        isBiometricEnabled = prefs.getBoolean("biometric_enabled", true)
         price1Month = prefs.getLong("price_1m", 49000L)
         price3Month = prefs.getLong("price_3m", 135000L)
         price6Month = prefs.getLong("price_6m", 255000L)
@@ -661,6 +674,8 @@ class MainActivity : AppCompatActivity() {
             .putString("main_currency", mainCurrency)
             .putLong("sub_expiry_millis", subscriptionExpiryMillis)
             .putBoolean("auto_voice_call", isAutoVoiceCallEnabled)
+            .putString("app_pin_code", appPinCode)
+            .putBoolean("biometric_enabled", isBiometricEnabled)
             .commit()
 
         if (userPhone.isNotBlank()) {
@@ -1498,7 +1513,12 @@ class MainActivity : AppCompatActivity() {
                     saveSessionSynchronously(true)
                     syncStoreWithAdminServer(userPhone, userPassword)
                     Toast.makeText(this@MainActivity, "✅ Xush kelibsiz, $storeName!", Toast.LENGTH_SHORT).show()
-                    renderMainWorkspace()
+                    if (appPinCode.length != 6) {
+                        renderPinLockScreen(mode = "SETUP_NEW")
+                    } else {
+                        isPinUnlockedThisSession = true
+                        renderMainWorkspace()
+                    }
                     scheduleMidnightAutoExcelSaveWithSignal()
                     checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
                 }
@@ -1550,8 +1570,8 @@ class MainActivity : AppCompatActivity() {
 
                     saveSessionSynchronously(true)
                     syncStoreWithAdminServer(ph, pw)
-                    Toast.makeText(this@MainActivity, "✅ Yangi hisob saqlandi! Do'kon ID: $storeId", Toast.LENGTH_LONG).show()
-                    renderMainWorkspace()
+                    Toast.makeText(this@MainActivity, "✅ Hisob saqlandi! Endi 6 xonali Ekran PIN-kodini o'rnating", Toast.LENGTH_LONG).show()
+                    renderPinLockScreen(mode = "SETUP_NEW")
                     scheduleMidnightAutoExcelSaveWithSignal()
                     checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
                 }
@@ -1893,23 +1913,11 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { showQrCodeAndOpenPageDialog() }
         }
 
-        val logoutQuickBtn = FrameLayout(this).apply {
-            background = glossyRedGrad(28f)
-            elevation = 6f
-            layoutParams = LinearLayout.LayoutParams(105, 105).apply { leftMargin = 8 }
-            addView(TextView(this@MainActivity).apply {
-                text = "🔑"
-                gravity = Gravity.CENTER
-                textSize = 17f
-            })
-            setOnClickListener { performLogout() }
-        }
         header.addView(menuIcon)
         header.addView(logoImg)
         header.addView(storeTitle)
         header.addView(chatHeaderBtn)
         header.addView(qrBtn)
-        header.addView(logoutQuickBtn)
         col.addView(header)
 
         val banner = LinearLayout(this).apply {
@@ -2795,6 +2803,7 @@ class MainActivity : AppCompatActivity() {
         col.addView(smsCard)
 
         val settingsList = listOf(
+            "🔐 Ekran PIN-kodi (6 xonali) va Face ID / Barmoq izi" to { showPinAndBiometricSettingsDialog() },
             "💬 Admin bilan jonli suhbat (Bot orqali murojaat)" to { showSupportChatBottomSheet() },
             "📤 Excel (.xlsx) Eksport — Download/QarzFy va Telegram/Bluetooth" to { showExportBottomSheet() },
             "📥 Excel (.xlsx) Fayldan Mijozlarni Import Qilish" to { showImportBottomSheet() },
@@ -3833,6 +3842,341 @@ class MainActivity : AppCompatActivity() {
                 val v = cleanNumberInput(et.text.toString())
                 if (v > 0) { db.addKassa("Kirim", "Kalkulyator", v, "UZS", "Naqd", "", storeName); renderMainWorkspace() }
             }.setNegativeButton("Yopish", null).show()
+    }
+
+
+    private fun renderPinLockScreen(mode: String) {
+        rootLayout.removeAllViews()
+        rootLayout.setBackgroundColor(Color.parseColor("#0F172A"))
+
+        var currentStep = mode
+        if (mode == "SETUP_NEW") currentStep = "SETUP_FIRST"
+
+        var firstEnteredPin = ""
+        var typedPin = ""
+
+        val mainCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(48, 70, 48, 50)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        val logo = ImageView(this).apply {
+            setImageResource(R.drawable.ic_qarzdaftar_logo)
+            layoutParams = LinearLayout.LayoutParams(150, 150).apply { bottomMargin = 20 }
+        }
+        mainCol.addView(logo)
+
+        val tvTitle = TextView(this).apply {
+            text = when (currentStep) {
+                "UNLOCK" -> "🔒 6 xonali PIN-kodni kiriting"
+                "CHANGE_VERIFY_OLD" -> "🔑 Eski 6 xonali PIN-kodni kiriting"
+                else -> "🛡️ Yangi 6 xonali PIN-kod o'rnating"
+            }
+            setTextColor(Color.WHITE)
+            textSize = 20f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+        }
+        mainCol.addView(tvTitle)
+
+        val tvSub = TextView(this).apply {
+            text = when (currentStep) {
+                "UNLOCK" -> "Dasturga kirish uchun PIN-kod tering yoki Face ID / Barmoq izidan foydalaning"
+                "CHANGE_VERIFY_OLD" -> "PIN-kodni o'zgartirish uchun avval amaldagi PIN-kodni tasdiqlang"
+                else -> "Keyingi safar dasturga tez va xavfsiz kirish uchun 6 ta raqam tanlang"
+            }
+            setTextColor(Color.parseColor("#94A3B8"))
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setPadding(20, 10, 20, 36)
+        }
+        mainCol.addView(tvSub)
+
+        val dotsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 28 }
+        }
+        val dotViews = Array(6) {
+            View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(44, 44).apply { setMargins(18, 0, 18, 0) }
+                background = glossyRoundBtnBg("#1E293B", "#64748B")
+                dotsRow.addView(this)
+            }
+        }
+        mainCol.addView(dotsRow)
+
+        val hiddenNumericInput = EditText(this).apply {
+            hint = "6 xonali raqam..."
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#64748B"))
+            gravity = Gravity.CENTER
+            textSize = 16f
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            background = glossyCard("#1E293B", "#334155", 28f)
+            setPadding(30, 18, 30, 18)
+            layoutParams = LinearLayout.LayoutParams(420, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 28 }
+        }
+        mainCol.addView(hiddenNumericInput)
+
+        fun updateDotsUI() {
+            for (i in 0 until 6) {
+                val filled = i < typedPin.length
+                dotViews[i].background = if (filled) {
+                    glossyRoundBtnBg("#6366F1", "#38BDF8")
+                } else {
+                    glossyRoundBtnBg("#1E293B", "#64748B")
+                }
+            }
+        }
+
+        fun handleSixDigitsCompleted(code: String) {
+            when (currentStep) {
+                "UNLOCK" -> {
+                    if (code == appPinCode) {
+                        isPinUnlockedThisSession = true
+                        Toast.makeText(this, "🔓 Xush kelibsiz!", Toast.LENGTH_SHORT).show()
+                        checkServerSubscriptionAndRender()
+                        scheduleMidnightAutoExcelSaveWithSignal()
+                        checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
+                    } else {
+                        Toast.makeText(this, "❌ PIN-kod noto'g'ri! Qayta urinib ko'ring.", Toast.LENGTH_SHORT).show()
+                        typedPin = ""
+                        hiddenNumericInput.setText("")
+                        updateDotsUI()
+                    }
+                }
+                "CHANGE_VERIFY_OLD" -> {
+                    if (code == appPinCode) {
+                        currentStep = "SETUP_FIRST"
+                        typedPin = ""
+                        hiddenNumericInput.setText("")
+                        tvTitle.text = "🛡️ Yangi 6 xonali PIN-kodni kiriting"
+                        tvSub.text = "Eski PIN tasdiqlandi! Endi yangi 6 xonali PIN-kod o'rnating"
+                        updateDotsUI()
+                    } else {
+                        Toast.makeText(this, "❌ Eski PIN-kod noto'g'ri!", Toast.LENGTH_SHORT).show()
+                        typedPin = ""
+                        hiddenNumericInput.setText("")
+                        updateDotsUI()
+                    }
+                }
+                "SETUP_FIRST" -> {
+                    firstEnteredPin = code
+                    currentStep = "SETUP_CONFIRM"
+                    typedPin = ""
+                    hiddenNumericInput.setText("")
+                    tvTitle.text = "🔁 PIN-kodni qayta tasdiqlang"
+                    tvSub.text = "Adashmaslik uchun 6 xonali PIN-kodni yana bir marta kiriting"
+                    updateDotsUI()
+                }
+                "SETUP_CONFIRM" -> {
+                    if (code == firstEnteredPin) {
+                        appPinCode = code
+                        isPinUnlockedThisSession = true
+                        saveSessionSynchronously(true)
+                        Toast.makeText(this, "✅ 6 xonali PIN-kod muvaffaqiyatli saqlandi!", Toast.LENGTH_LONG).show()
+                        checkServerSubscriptionAndRender()
+                        scheduleMidnightAutoExcelSaveWithSignal()
+                        checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
+                    } else {
+                        Toast.makeText(this, "❌ PIN-kodlar mos kelmadi! Qaytadan kiriting.", Toast.LENGTH_LONG).show()
+                        currentStep = "SETUP_FIRST"
+                        firstEnteredPin = ""
+                        typedPin = ""
+                        hiddenNumericInput.setText("")
+                        tvTitle.text = "🛡️ Yangi 6 xonali PIN-kod o'rnating"
+                        tvSub.text = "6 ta raqam tanlang"
+                        updateDotsUI()
+                    }
+                }
+            }
+        }
+
+        var isInternalEdit = false
+        hiddenNumericInput.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                if (isInternalEdit) return
+                val str = s?.toString()?.filter { it.isDigit() }?.take(6) ?: ""
+                typedPin = str
+                updateDotsUI()
+                if (typedPin.length == 6) {
+                    handleSixDigitsCompleted(typedPin)
+                }
+            }
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        })
+
+        fun appendDigit(d: String) {
+            if (typedPin.length < 6) {
+                typedPin += d
+                isInternalEdit = true
+                hiddenNumericInput.setText(typedPin)
+                hiddenNumericInput.setSelection(typedPin.length)
+                isInternalEdit = false
+                updateDotsUI()
+                if (typedPin.length == 6) {
+                    handleSixDigitsCompleted(typedPin)
+                }
+            }
+        }
+
+        fun removeLastDigit() {
+            if (typedPin.isNotEmpty()) {
+                typedPin = typedPin.dropLast(1)
+                isInternalEdit = true
+                hiddenNumericInput.setText(typedPin)
+                hiddenNumericInput.setSelection(typedPin.length)
+                isInternalEdit = false
+                updateDotsUI()
+            }
+        }
+
+        val keypadGrid = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        val rows = listOf(
+            listOf("1", "2", "3"),
+            listOf("4", "5", "6"),
+            listOf("7", "8", "9"),
+            listOf("👆", "0", "⌫")
+        )
+
+        rows.forEach { r ->
+            val rLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = 18 }
+            }
+            r.forEach { keyLabel ->
+                val btnKey = TextView(this).apply {
+                    text = keyLabel
+                    gravity = Gravity.CENTER
+                    setTextColor(Color.WHITE)
+                    textSize = 22f
+                    setTypeface(null, Typeface.BOLD)
+                    background = if (keyLabel == "👆") glossyPurpleGrad(90f) else glossyRoundBtnBg("#1E293B", "#334155")
+                    elevation = 8f
+                    layoutParams = LinearLayout.LayoutParams(165, 165).apply { setMargins(22, 0, 22, 0) }
+                    setOnClickListener {
+                        when (keyLabel) {
+                            "⌫" -> removeLastDigit()
+                            "👆" -> {
+                                if (currentStep == "UNLOCK") {
+                                    triggerBiometricPromptForUnlock()
+                                } else {
+                                    Toast.makeText(this@MainActivity, "Avval 6 xonali PIN-kodni kiriting!", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            else -> appendDigit(keyLabel)
+                        }
+                    }
+                }
+                rLayout.addView(btnKey)
+            }
+            keypadGrid.addView(rLayout)
+        }
+        mainCol.addView(keypadGrid)
+
+        if (mode == "CHANGE_VERIFY_OLD") {
+            mainCol.addView(Button(this).apply {
+                text = "⬅ Bekor qilish va qaytish"
+                setTextColor(Color.WHITE)
+                background = glossyCard("#334155", "#64748B", 30f)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, 110).apply { topMargin = 12 }
+                setPadding(40, 0, 40, 0)
+                setOnClickListener { renderMainWorkspace() }
+            })
+        }
+
+        val scroll = ScrollView(this).apply { addView(mainCol) }
+        rootLayout.addView(scroll)
+
+        hiddenNumericInput.postDelayed({
+            hiddenNumericInput.requestFocus()
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.showSoftInput(hiddenNumericInput, InputMethodManager.SHOW_IMPLICIT)
+        }, 250)
+
+        if (currentStep == "UNLOCK" && isBiometricEnabled) {
+            mainCol.postDelayed({
+                triggerBiometricPromptForUnlock()
+            }, 350)
+        }
+    }
+
+    private fun triggerBiometricPromptForUnlock() {
+        try {
+            val biometricManager = BiometricManager.from(this)
+            val canAuth = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+            if (canAuth != BiometricManager.BIOMETRIC_SUCCESS) {
+                return
+            }
+
+            val executor = ContextCompat.getMainExecutor(this)
+            val biometricPrompt = BiometricPrompt(this, executor, object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    isPinUnlockedThisSession = true
+                    Toast.makeText(this@MainActivity, "🔓 Biometrik tasdiqlandi!", Toast.LENGTH_SHORT).show()
+                    checkServerSubscriptionAndRender()
+                    scheduleMidnightAutoExcelSaveWithSignal()
+                    checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
+                }
+            })
+
+            val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                .setTitle("QarzFy Xavfsizlik Qulfi")
+                .setSubtitle("Face ID yoki Barmoq izi orqali dasturni oching")
+                .setNegativeButtonText("PIN-kod terish")
+                .build()
+
+            biometricPrompt.authenticate(promptInfo)
+        } catch (_: Exception) {}
+    }
+
+    private fun showPinAndBiometricSettingsDialog() {
+        val pinStatus = if (appPinCode.length == 6) "✅ O'rnatilgan (6 xonali)" else "🔴 O'rnatilmagan"
+        val bioStatus = if (isBiometricEnabled) "✅ Yoqilgan (Face ID / Barmoq izi)" else "🔴 O'chirilgan"
+
+        AlertDialog.Builder(this)
+            .setTitle("🔐 Ekran PIN-kodi va Biometrik Qulf")
+            .setMessage("📌 PIN-kod holati: $pinStatus
+👆 Face ID / Fingerprint: $bioStatus
+
+PIN-kodni o'zgartirish uchun avval eski 6 xonali PIN-kodingizni kiritasiz.")
+            .setPositiveButton("🔄 PIN-kodni o'zgartirish") { _, _ ->
+                if (appPinCode.length == 6) {
+                    renderPinLockScreen(mode = "CHANGE_VERIFY_OLD")
+                } else {
+                    renderPinLockScreen(mode = "SETUP_NEW")
+                }
+            }
+            .setNeutralButton(if (isBiometricEnabled) "👆 FaceID/Barmoq izini O'chirish" else "👆 FaceID/Barmoq izini Yoqish") { _, _ ->
+                isBiometricEnabled = !isBiometricEnabled
+                saveSessionSynchronously(isLoggedIn)
+                Toast.makeText(this, if (isBiometricEnabled) "✅ Face ID / Barmoq izi yoqildi!" else "🔴 Biometrik kirish o'chirildi", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Yopish", null)
+            .show()
     }
 
     private fun showPushSettingsDialog() {
