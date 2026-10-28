@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 80
-        versionName "8.0-PermanentGlass"
+        versionCode 90
+        versionName "9.0-ChatAndVerify"
     }
 
     buildTypes {
