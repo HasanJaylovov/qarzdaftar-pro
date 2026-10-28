@@ -1632,7 +1632,7 @@ class MainActivity : AppCompatActivity() {
         col.addView(directActionsRow)
 
         val tvCountLabel = TextView(this).apply {
-            textColor = Color.parseColor("#4F46E5")
+            setTextColor(Color.parseColor("#4F46E5"))
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
             setPadding(16, 10, 28, 10)
