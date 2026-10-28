@@ -3,6 +3,7 @@ package uz.qarzdaftar.pro
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.DatePickerDialog
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.ClipData
@@ -62,6 +63,7 @@ data class ClientRec(
 )
 
 data class TxRec(
+    val id: Int,
     val txId: String,
     val kind: String,
     val personName: String,
@@ -69,6 +71,7 @@ data class TxRec(
     val amount: Long,
     val currency: String,
     val date: String,
+    val dueDate: String,
     val note: String,
     val status: String,
     val isSupplier: Boolean
@@ -104,7 +107,7 @@ data class ChatMsg(
     val time: String
 )
 
-class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_master_permanent.db", null, 4) {
+class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_master_permanent.db", null, 5) {
     var onDataChangedCallback: (() -> Unit)? = null
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -150,11 +153,16 @@ class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_m
                 amount INTEGER,
                 currency TEXT,
                 date TEXT,
+                due_date TEXT DEFAULT '',
                 note TEXT,
                 status TEXT,
                 is_supplier INTEGER DEFAULT 0
             )
         """.trimIndent())
+
+        try {
+            db.execSQL("ALTER TABLE transactions ADD COLUMN due_date TEXT DEFAULT ''")
+        } catch (_: Exception) {}
 
         db.execSQL("""
             CREATE TABLE IF NOT EXISTS products (
@@ -247,30 +255,32 @@ class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_m
         return res
     }
 
-    fun upsertClientDirect(name: String, phone: String, balUsd: Double, balUzs: Long, createdAt: String, isSupplier: Boolean, triggerAutoBackup: Boolean = true) {
+    fun upsertClientDirect(name: String, phone: String, balUsd: Double, balUzs: Long, createdAt: String, isSupplier: Boolean, dueDate: String = "", triggerAutoBackup: Boolean = true) {
         val cleanName = name.trim()
         if (cleanName.isEmpty()) return
         val db = writableDatabase
         val supFlag = if (isSupplier) 1 else 0
-        val c = db.rawQuery("SELECT id FROM clients WHERE name = ? AND is_supplier = ?", arrayOf(cleanName, supFlag.toString()))
+        val c = db.rawQuery("SELECT id, due_date FROM clients WHERE name = ? AND is_supplier = ?", arrayOf(cleanName, supFlag.toString()))
         if (c.moveToFirst()) {
             val id = c.getInt(0)
-            db.execSQL("UPDATE clients SET phone = ?, bal_usd = ?, bal_uzs = ? WHERE id = ?", arrayOf<Any>(phone.trim(), balUsd, balUzs, id))
+            val existingDue = c.getString(1) ?: ""
+            val finalDue = if (dueDate.isNotEmpty()) dueDate else existingDue
+            db.execSQL("UPDATE clients SET phone = ?, bal_usd = ?, bal_uzs = ?, due_date = ? WHERE id = ?", arrayOf<Any>(phone.trim(), balUsd, balUzs, finalDue, id))
         } else {
             db.execSQL(
-                "INSERT INTO clients (name, phone, bal_usd, bal_uzs, folder, due_date, created_at, is_supplier) VALUES (?, ?, ?, ?, 'Barchasi', 'Bugun', ?, ?)",
-                arrayOf<Any>(cleanName, phone.trim(), balUsd, balUzs, createdAt.ifEmpty { nowStr() }, supFlag)
+                "INSERT INTO clients (name, phone, bal_usd, bal_uzs, folder, due_date, created_at, is_supplier) VALUES (?, ?, ?, ?, 'Barchasi', ?, ?, ?)",
+                arrayOf<Any>(cleanName, phone.trim(), balUsd, balUzs, dueDate, createdAt.ifEmpty { nowStr() }, supFlag)
             )
         }
         c.close()
         if (triggerAutoBackup) onDataChangedCallback?.invoke()
     }
 
-    fun insertTxDirect(txId: String, kind: String, personName: String, personPhone: String, amount: Long, currency: String, date: String, note: String, status: String, isSupplier: Boolean) {
+    fun insertTxDirect(txId: String, kind: String, personName: String, personPhone: String, amount: Long, currency: String, date: String, dueDate: String, note: String, status: String, isSupplier: Boolean) {
         val supFlag = if (isSupplier) 1 else 0
         writableDatabase.execSQL(
-            "INSERT INTO transactions (tx_id, kind, person_name, person_phone, amount, currency, date, note, status, is_supplier) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            arrayOf<Any>(txId, kind, personName, personPhone, Math.abs(amount), currency, date.ifEmpty { nowStr() }, note, status.ifEmpty { "Faol" }, supFlag)
+            "INSERT INTO transactions (tx_id, kind, person_name, person_phone, amount, currency, date, due_date, note, status, is_supplier) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            arrayOf<Any>(txId, kind, personName, personPhone, Math.abs(amount), currency, date.ifEmpty { nowStr() }, dueDate, note, status.ifEmpty { "Faol" }, supFlag)
         )
     }
 
@@ -279,23 +289,26 @@ class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_m
         if (cleanName.isEmpty()) return
         val db = writableDatabase
         val supFlag = if (isSupplier) 1 else 0
-        val c = db.rawQuery("SELECT id, bal_usd, bal_uzs FROM clients WHERE name = ? AND is_supplier = ?", arrayOf(cleanName, supFlag.toString()))
+        val c = db.rawQuery("SELECT id, bal_usd, bal_uzs, due_date FROM clients WHERE name = ? AND is_supplier = ?", arrayOf(cleanName, supFlag.toString()))
         val delta = if (kind == "Chiqim") -amount else amount
+        val exactTime = nowStr()
         if (c.moveToFirst()) {
             val id = c.getInt(0)
             val curUsd = c.getDouble(1)
             val curUzs = c.getLong(2)
+            val oldDue = c.getString(3) ?: ""
+            val newDue = if (dueDate.isNotBlank()) dueDate else oldDue
             if (currency == "USD") {
-                db.execSQL("UPDATE clients SET bal_usd = ?, due_date = ? WHERE id = ?", arrayOf<Any>(curUsd + delta, dueDate, id))
+                db.execSQL("UPDATE clients SET bal_usd = ?, due_date = ? WHERE id = ?", arrayOf<Any>(curUsd + delta, newDue, id))
             } else {
-                db.execSQL("UPDATE clients SET bal_uzs = ?, due_date = ? WHERE id = ?", arrayOf<Any>(curUzs + delta, dueDate, id))
+                db.execSQL("UPDATE clients SET bal_uzs = ?, due_date = ? WHERE id = ?", arrayOf<Any>(curUzs + delta, newDue, id))
             }
         } else {
             val initUsd = if (currency == "USD") delta.toDouble() else 0.0
             val initUzs = if (currency == "UZS") delta else 0L
             db.execSQL(
                 "INSERT INTO clients (name, phone, bal_usd, bal_uzs, folder, due_date, created_at, is_supplier) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                arrayOf<Any>(cleanName, phone.trim(), initUsd, initUzs, folder, dueDate, nowStr(), supFlag)
+                arrayOf<Any>(cleanName, phone.trim(), initUsd, initUzs, folder, dueDate, exactTime, supFlag)
             )
         }
         c.close()
@@ -303,10 +316,46 @@ class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_m
         if (amount > 0) {
             val prefix = if (isSupplier) "ST-" else "D-"
             val txId = prefix + (100000 + Random().nextInt(900000))
-            insertTxDirect(txId, kind, cleanName, phone.trim(), amount, currency, nowStr(), note, "Faol", isSupplier)
+            insertTxDirect(txId, kind, cleanName, phone.trim(), amount, currency, exactTime, dueDate, note, "Faol", isSupplier)
         }
-        // HAR BIR KIRIM-CHIQIM YOZILGANDA AVTOMATIK DOWNLOAD/QarzFy GA SAQLANADI!
         onDataChangedCallback?.invoke()
+    }
+
+    // Qarz yozuvini o'chirish/yopish: tarixdan o'chib ketmaydi, "O'chirilgan (sana va vaqt)" bo'lib saqlanib qoladi!
+    fun markTransactionDeletedAndRevertBalance(tx: TxRec) {
+        if (tx.status.startsWith("O'chirildi")) return
+        val db = writableDatabase
+        val delTime = nowStr()
+        val newStatus = "O'chirildi ($delTime)"
+        db.execSQL("UPDATE transactions SET status = ? WHERE id = ?", arrayOf<Any>(newStatus, tx.id))
+
+        val supFlag = if (tx.isSupplier) 1 else 0
+        val c = db.rawQuery("SELECT id, bal_usd, bal_uzs FROM clients WHERE name = ? AND is_supplier = ?", arrayOf(tx.personName, supFlag.toString()))
+        if (c.moveToFirst()) {
+            val clientId = c.getInt(0)
+            val curUsd = c.getDouble(1)
+            val curUzs = c.getLong(2)
+            // Agar oldin Chiqim (qarz) bo'lgan bo'lsa, o'chirilganda balansga +amount qaytadi
+            val revertDelta = if (tx.kind == "Chiqim") tx.amount else -tx.amount
+            if (tx.currency == "USD") {
+                db.execSQL("UPDATE clients SET bal_usd = ? WHERE id = ?", arrayOf<Any>(curUsd + revertDelta, clientId))
+            } else {
+                db.execSQL("UPDATE clients SET bal_uzs = ? WHERE id = ?", arrayOf<Any>(curUzs + revertDelta, clientId))
+            }
+        }
+        c.close()
+        onDataChangedCallback?.invoke()
+    }
+
+    fun getPersonByName(name: String, isSupplier: Boolean): ClientRec? {
+        val supFlag = if (isSupplier) 1 else 0
+        val c = readableDatabase.rawQuery("SELECT id, name, phone, bal_usd, bal_uzs, folder, due_date, created_at FROM clients WHERE name = ? AND is_supplier = ?", arrayOf(name, supFlag.toString()))
+        var res: ClientRec? = null
+        if (c.moveToFirst()) {
+            res = ClientRec(c.getInt(0), c.getString(1) ?: "", c.getString(2) ?: "", c.getDouble(3), c.getLong(4), c.getString(5) ?: "Barchasi", c.getString(6) ?: "", c.getString(7) ?: "")
+        }
+        c.close()
+        return res
     }
 
     fun getPersons(isSupplier: Boolean, query: String = "", sortMode: String = "Faol"): List<ClientRec> {
@@ -331,12 +380,56 @@ class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_m
         return list
     }
 
+    fun getTransactionsForPerson(personName: String, isSupplier: Boolean): List<TxRec> {
+        val list = mutableListOf<TxRec>()
+        val supFlag = if (isSupplier) 1 else 0
+        val c = readableDatabase.rawQuery(
+            "SELECT id, tx_id, kind, person_name, person_phone, amount, currency, date, due_date, note, status FROM transactions WHERE person_name = ? AND is_supplier = ? ORDER BY id DESC",
+            arrayOf(personName, supFlag.toString())
+        )
+        while (c.moveToNext()) {
+            list.add(
+                TxRec(
+                    c.getInt(0),
+                    c.getString(1) ?: "",
+                    c.getString(2) ?: "Chiqim",
+                    c.getString(3) ?: "",
+                    c.getString(4) ?: "",
+                    c.getLong(5),
+                    c.getString(6) ?: "UZS",
+                    c.getString(7) ?: "",
+                    c.getString(8) ?: "",
+                    c.getString(9) ?: "",
+                    c.getString(10) ?: "Faol",
+                    isSupplier
+                )
+            )
+        }
+        c.close()
+        return list
+    }
+
     fun getTransactions(isSupplier: Boolean): List<TxRec> {
         val list = mutableListOf<TxRec>()
         val supFlag = if (isSupplier) 1 else 0
-        val c = readableDatabase.rawQuery("SELECT tx_id, kind, person_name, person_phone, amount, currency, date, note, status FROM transactions WHERE is_supplier = ? ORDER BY id DESC", arrayOf(supFlag.toString()))
+        val c = readableDatabase.rawQuery("SELECT id, tx_id, kind, person_name, person_phone, amount, currency, date, due_date, note, status FROM transactions WHERE is_supplier = ? ORDER BY id DESC", arrayOf(supFlag.toString()))
         while (c.moveToNext()) {
-            list.add(TxRec(c.getString(0) ?: "", c.getString(1) ?: "", c.getString(2) ?: "", c.getString(3) ?: "", c.getLong(4), c.getString(5) ?: "UZS", c.getString(6) ?: "", c.getString(7) ?: "", c.getString(8) ?: "Faol", isSupplier))
+            list.add(
+                TxRec(
+                    c.getInt(0),
+                    c.getString(1) ?: "",
+                    c.getString(2) ?: "",
+                    c.getString(3) ?: "",
+                    c.getString(4) ?: "",
+                    c.getLong(5),
+                    c.getString(6) ?: "UZS",
+                    c.getString(7) ?: "",
+                    c.getString(8) ?: "",
+                    c.getString(9) ?: "",
+                    c.getString(10) ?: "Faol",
+                    isSupplier
+                )
+            )
         }
         c.close()
         return list
@@ -466,7 +559,6 @@ class MainActivity : AppCompatActivity() {
         prefs = getSharedPreferences("QarzFyMasterPermanentPrefs", Context.MODE_PRIVATE)
         db = QarzFyDatabase(this)
 
-        // HAR BIR O'ZGARISHDA AVTOMATIK DOWNLOAD/QarzFy GA SAQLASH CALLBACKI:
         db.onDataChangedCallback = {
             CoroutineScope(Dispatchers.IO).launch {
                 try {
@@ -475,7 +567,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Ovozli qo'ng'iroq/TTS dvigatelini ishga tushirish
         ttsEngine = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 ttsEngine?.language = Locale("uz", "UZ")
@@ -492,6 +583,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             checkServerSubscriptionAndRender()
             scheduleMidnightAutoExcelSaveWithSignal()
+            checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
         }
     }
 
@@ -539,7 +631,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Agar ilova o'chirilib qayta o'rnatilgan bo'lsa, Download/QarzFy/QarzFy_AvtoBazasi.xlsx dan avtomatik tiklaydi!
     private fun restoreFromPermanentDownloadsBackupIfEmpty() {
         if (db.getPersons(false).isNotEmpty()) return
         try {
@@ -585,6 +676,77 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton("Bekor qilish", null)
             .show()
+    }
+
+    // ==================== KALENDAR TANLASH DIALOGI (DatePickerDialog) ====================
+    private fun defaultDueDateStr(): String {
+        val cal = Calendar.getInstance()
+        cal.add(Calendar.DAY_OF_MONTH, 7)
+        return SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(cal.time)
+    }
+
+    private fun openCalendarPicker(initialDateStr: String, onSelected: (String) -> Unit) {
+        val cal = Calendar.getInstance()
+        try {
+            val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+            val parsed = sdf.parse(initialDateStr)
+            if (parsed != null) cal.time = parsed
+        } catch (_: Exception) {}
+
+        DatePickerDialog(
+            this,
+            { _, year, month, dayOfMonth ->
+                val picked = String.format(Locale.getDefault(), "%02d.%02d.%04d", dayOfMonth, month + 1, year)
+                onSelected(picked)
+            },
+            cal.get(Calendar.YEAR),
+            cal.get(Calendar.MONTH),
+            cal.get(Calendar.DAY_OF_MONTH)
+        ).show()
+    }
+
+    // ==================== MUDDATI KELGAN QARZLAR UCHUN AVTO-SMS (XARIDORLAR VA TA'MINOTCHILARGA!) ====================
+    private fun isDateDueOrOverdue(dueDateStr: String): Boolean {
+        if (dueDateStr.isBlank() || dueDateStr == "Bugun") return false
+        return try {
+            val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+            val due = sdf.parse(dueDateStr) ?: return false
+            val today = sdf.parse(sdf.format(Date())) ?: return false
+            !due.after(today) // due <= today
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun checkDueDatesAndSendAutoSmsForClientsAndSuppliers() {
+        val todayTag = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(Date())
+        val lastSentDay = prefs.getString("last_due_auto_sms_day", "") ?: ""
+        if (lastSentDay == todayTag) return // Kuniga 1 marta avtomatik yuboradi
+
+        var sentCount = 0
+        // 1) Qarzdor xaridorlar muddati kelgan bo'lsa
+        db.getPersons(isSupplier = false).forEach { c ->
+            if (c.balUzs != 0L && isDateDueOrOverdue(c.dueDate)) {
+                val amtStr = formatMoney(Math.abs(c.balUzs), "so'm")
+                val msg = "Hurmatli ${c.name}, $storeName do'konidan $amtStr qarzingizni to'lash muddati (${c.dueDate}) keldi. Iltimos, to'lovni amalga oshiring."
+                sendAutoSms(c.phone, msg)
+                sentCount++
+            }
+        }
+        // 2) Ta'minotchilar muddati kelgan bo'lsa
+        db.getPersons(isSupplier = true).forEach { s ->
+            if (s.balUzs != 0L && isDateDueOrOverdue(s.dueDate)) {
+                val amtStr = formatMoney(Math.abs(s.balUzs), "so'm")
+                val msg = "Hurmatli hamkor (${s.name}), $storeName do'koni bo'yicha $amtStr hisob-kitob muddati (${s.dueDate}) keldi."
+                sendAutoSms(s.phone, msg)
+                sentCount++
+            }
+        }
+
+        if (sentCount > 0) {
+            prefs.edit().putString("last_due_auto_sms_day", todayTag).commit()
+            Toast.makeText(this, "⏰ Muddati kelgan $sentCount ta mijoz/ta'minotchiga Avto-SMS yuborildi!", Toast.LENGTH_LONG).show()
+        }
     }
 
     // ==================== GLOSSY GLASSMORPHISM DRAWABLES ====================
@@ -662,19 +824,20 @@ class MainActivity : AppCompatActivity() {
         return "$days kun qoldi ($dateStr gacha)"
     }
 
-    // ==================== FONDA KO'RINMAS AVTO-QO'NG'IROQ (BOT VA OVOZLI ESLATMA) VA SIM AVTO-SMS ====================
-    private fun triggerBackgroundSmsAndVoiceCall(clientName: String, phoneNumber: String, amount: Long, kind: String, note: String) {
+    // ==================== FONDA KO'RINMAS AVTO-QO'NG'IROQ VA SIM AVTO-SMS ====================
+    private fun triggerBackgroundSmsAndVoiceCall(clientName: String, phoneNumber: String, amount: Long, kind: String, note: String, dueDate: String = "", isSupplier: Boolean = false) {
         val fmtAmt = formatMoney(amount, "so'm")
-        val smsText = if (kind == "Chiqim") {
-            "Hurmatli $clientName, $storeName do'konida sizga $fmtAmt qarz yozildi ($note)."
+        val duePart = if (dueDate.isNotBlank()) " Muddat: $dueDate." else ""
+        val smsText = if (isSupplier) {
+            "Hurmatli hamkor ($clientName), $storeName do'konida $fmtAmt ($kind) qayd etildi ($note).$duePart"
+        } else if (kind == "Chiqim") {
+            "Hurmatli $clientName, $storeName do'konida sizga $fmtAmt qarz yozildi ($note).$duePart"
         } else {
             "Hurmatli $clientName, $storeName do'konidagi qarzingizdan $fmtAmt to'lov qabul qilindi. Rahmat!"
         }
 
-        // 1) Fonda SIM orqali Avto-SMS (Ekranda hech narsa ko'rinmaydi)
         sendAutoSms(phoneNumber, smsText)
 
-        // 2) Fonda Ko'rinmas Avto-Ovozli Qo'ng'iroq / Bot Voice Eslatma (Telefonda qo'ng'iroq oynasi chiqmaydi va bilinmaydi!)
         if (isAutoVoiceCallEnabled) {
             CoroutineScope(Dispatchers.IO).launch {
                 try {
@@ -691,6 +854,7 @@ class MainActivity : AppCompatActivity() {
                         put("amount", fmtAmt)
                         put("kind", kind)
                         put("note", note)
+                        put("due_date", dueDate)
                         put("voice_text", smsText)
                     }
                     conn.outputStream.write(body.toString().toByteArray())
@@ -1157,6 +1321,7 @@ class MainActivity : AppCompatActivity() {
                 syncStoreWithAdminServer(userPhone, userPassword)
                 renderMainWorkspace()
                 scheduleMidnightAutoExcelSaveWithSignal()
+                checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
             }
         }
         formCard.addView(btnLoginExisting)
@@ -1199,6 +1364,7 @@ class MainActivity : AppCompatActivity() {
                 syncStoreWithAdminServer(ph, pw)
                 renderMainWorkspace()
                 scheduleMidnightAutoExcelSaveWithSignal()
+                checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
             }
         }
         formCard.addView(btnRegisterNew)
@@ -1476,7 +1642,7 @@ class MainActivity : AppCompatActivity() {
         return overlay
     }
 
-    // ==================== TAB 0: ASOSIY EKRAN (REAL-TIME SEARCH BILAN!) ====================
+    // ==================== TAB 0: ASOSIY EKRAN ====================
     private fun buildHomeTab(): View {
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply {
@@ -1560,7 +1726,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 0, 22, 0)
         })
         banner.addView(TextView(this).apply {
-            text = "Obuna: ${remainingDaysText()}\nAvto-Save: Download/QarzFy • SIM SMS + Ovozli Bot faol"
+            text = "Obuna: ${remainingDaysText()}\nAvto-Save: Download/QarzFy • Muddat Avto-SMS faol"
             setTextColor(Color.WHITE)
             textSize = 12f
             setTypeface(null, Typeface.BOLD)
@@ -1687,7 +1853,6 @@ class MainActivity : AppCompatActivity() {
         val etSearch = makeGlassInput("🔍 Ism yoki telefon raqam yozing (birdan chiqaradi)...", searchQuery)
         col.addView(etSearch)
 
-        // JONLI NATIJALAR KONTEYNERI (Yozgan zahoti klaviatura yopilmasdan yangilanadi!)
         val listContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -1732,7 +1897,8 @@ class MainActivity : AppCompatActivity() {
                         elevation = 6f
                         setPadding(28, 24, 32, 24)
                         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 14 }
-                        setOnClickListener { showClientKirimChiqimBottomSheet(p, isSup) }
+                        // ISM-FAMILIYASI BOSILGANDA TO'LIQ QARZLAR VA O'CHIRILGAN QARZLAR TARIXI OCHILADI!
+                        setOnClickListener { showPersonFullHistoryAndActionSheet(p, isSup) }
                     }
 
                     val firstChar = p.name.trim().firstOrNull()?.uppercaseChar() ?: 'M'
@@ -1757,9 +1923,9 @@ class MainActivity : AppCompatActivity() {
                         setTypeface(null, Typeface.BOLD)
                     })
                     midCol.addView(TextView(this).apply {
-                        text = p.phone
+                        text = "${p.phone}\n📅 Yaratilgan: ${p.createdAt}"
                         setTextColor(Color.parseColor("#64748B"))
-                        textSize = 13f
+                        textSize = 11.5f
                     })
 
                     val rightCol = LinearLayout(this).apply {
@@ -1772,10 +1938,12 @@ class MainActivity : AppCompatActivity() {
                         textSize = 16f
                         setTypeface(null, Typeface.BOLD)
                     })
+                    val isDue = isDateDueOrOverdue(p.dueDate)
                     rightCol.addView(TextView(this).apply {
-                        text = p.dueDate.ifEmpty { "Bugun" }
-                        setTextColor(Color.parseColor("#94A3B8"))
+                        text = if (p.dueDate.isBlank()) "Muddat yo'q" else "⏳ ${p.dueDate}"
+                        setTextColor(if (isDue && p.balUzs != 0L) Color.parseColor("#DC2626") else Color.parseColor("#6366F1"))
                         textSize = 11.5f
+                        setTypeface(null, if (isDue) Typeface.BOLD else Typeface.NORMAL)
                     })
 
                     rowCard.addView(avatar)
@@ -1801,7 +1969,163 @@ class MainActivity : AppCompatActivity() {
         return scroll
     }
 
-    // ==================== TAB 1: KASSA ====================
+    // ==================== XARIDOR YOKI TA'MINOTCHI USTIGA BOSILGANDA TO'LIQ TARIX (HAR BIR QARZ VA O'CHIRILGAN QARZ SANASI/VAQTI BILAN!) ====================
+    private fun showPersonFullHistoryAndActionSheet(initialClient: ClientRec, isSupplier: Boolean) {
+        val client = db.getPersonByName(initialClient.name, isSupplier) ?: initialClient
+        val sheet = BottomSheetDialog(this)
+        val scroll = ScrollView(this)
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = glossyCard("#FFFFFF", "#E2E8F0", 54f)
+            setPadding(42, 32, 42, 56)
+        }
+
+        // Yuqori Ma'lumot Kartasi
+        val headerBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = glossyPurpleGrad(38f)
+            setPadding(36, 30, 36, 30)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 20 }
+        }
+        headerBox.addView(TextView(this).apply {
+            text = "${if (isSupplier) "🚚 Ta'minotchi:" else "👤 Xaridor:"} ${client.name}"
+            setTextColor(Color.WHITE)
+            textSize = 18f
+            setTypeface(null, Typeface.BOLD)
+        })
+        headerBox.addView(TextView(this).apply {
+            text = "📞 Telefon: ${client.phone}\n💰 Joriy balans: ${formatMoney(client.balUzs, "UZS")}\n⏳ Qaytarish muddati: ${client.dueDate.ifEmpty { "Belgilanmagan" }}"
+            setTextColor(Color.parseColor("#E0E7FF"))
+            textSize = 13.5f
+            setPadding(0, 8, 0, 0)
+        })
+        wrap.addView(headerBox)
+
+        // Tezkor Amallar: + Qarz yozish | + To'lov olish | SMS Eslatma
+        val actRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 20 }
+        }
+        actRow.addView(Button(this).apply {
+            text = "➕ Qarz Yozish"
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            background = glossyOrangeGrad(28f)
+            layoutParams = LinearLayout.LayoutParams(0, 115, 1f).apply { rightMargin = 8 }
+            setOnClickListener {
+                sheet.dismiss()
+                showClientKirimChiqimBottomSheet(client, isSupplier, defaultKind = "Chiqim")
+            }
+        })
+        actRow.addView(Button(this).apply {
+            text = "💵 To'lov Olish"
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            background = glossyPurpleGrad(28f)
+            layoutParams = LinearLayout.LayoutParams(0, 115, 1f).apply { rightMargin = 8 }
+            setOnClickListener {
+                sheet.dismiss()
+                showClientKirimChiqimBottomSheet(client, isSupplier, defaultKind = "Kirim")
+            }
+        })
+        actRow.addView(Button(this).apply {
+            text = "📩 SMS"
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            background = glossyRoundBtnBg("#059669")
+            layoutParams = LinearLayout.LayoutParams(140, 115)
+            setOnClickListener {
+                val msg = "Hurmatli ${client.name}, $storeName do'konida ${formatMoney(Math.abs(client.balUzs), "so'm")} hisobingiz bor. Muddat: ${client.dueDate}."
+                sendAutoSms(client.phone, msg)
+                Toast.makeText(this@MainActivity, "📩 SMS yuborildi!", Toast.LENGTH_SHORT).show()
+            }
+        })
+        wrap.addView(actRow)
+
+        wrap.addView(TextView(this).apply {
+            text = "📜 Barcha Yozilgan va O'chirilgan Qarzlar Tarixi:"
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 15.5f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(4, 0, 4, 14)
+        })
+
+        val txList = db.getTransactionsForPerson(client.name, isSupplier)
+        if (txList.isEmpty()) {
+            wrap.addView(TextView(this).apply {
+                text = "Hozircha tranzaksiyalar tarixi bo'sh."
+                setTextColor(Color.parseColor("#64748B"))
+                textSize = 13.5f
+                background = glossyCard("#F8FAFC", "#E2E8F0", 28f)
+                setPadding(30, 40, 30, 40)
+            })
+        } else {
+            txList.forEach { tx ->
+                val isDeleted = tx.status.startsWith("O'chirildi")
+                val isDebt = (tx.kind == "Chiqim")
+                val txCard = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    background = glossyCard(if (isDeleted) "#F1F5F9" else "#F8FAFC", if (isDeleted) "#94A3B8" else "#CBD5E1", 32f)
+                    setPadding(30, 24, 30, 24)
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 14 }
+                }
+
+                val badgeText = when {
+                    isDeleted -> "⚪ O'CHIRILGAN QARZ (${tx.kind}) • ${formatMoney(tx.amount, tx.currency)}"
+                    isDebt -> "🔴 QARZ YOZILDI (Chiqim) • -${formatMoney(tx.amount, tx.currency)}"
+                    else -> "🟢 TO'LOV OLINDI (Kirim) • +${formatMoney(tx.amount, tx.currency)}"
+                }
+
+                txCard.addView(TextView(this).apply {
+                    text = badgeText
+                    setTextColor(
+                        when {
+                            isDeleted -> Color.parseColor("#64748B")
+                            isDebt -> Color.parseColor("#DC2626")
+                            else -> Color.parseColor("#059669")
+                        }
+                    )
+                    textSize = 14.5f
+                    setTypeface(null, Typeface.BOLD)
+                })
+
+                txCard.addView(TextView(this).apply {
+                    text = "🕒 Yozilgan vaqti: ${tx.date}\n⏳ Qaytarish muddati: ${tx.dueDate.ifEmpty { "Belgilanmagan" }}\n📝 Izoh: ${tx.note.ifEmpty { "Izohsiz" }}\n📌 Holati: ${tx.status}"
+                    setTextColor(Color.parseColor("#334155"))
+                    textSize = 12.5f
+                    setPadding(0, 8, 0, 12)
+                })
+
+                if (!isDeleted) {
+                    txCard.addView(Button(this).apply {
+                        text = "🗑 Qarzni O'chirish / Yopish (Tarixda saqlanadi)"
+                        setTextColor(Color.WHITE)
+                        textSize = 11.5f
+                        background = glossyRedGrad(24f)
+                        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 98)
+                        setOnClickListener {
+                            db.markTransactionDeletedAndRevertBalance(tx)
+                            Toast.makeText(this@MainActivity, "✅ Qarz o'chirildi va sana/vaqti bilan tarixda saqlandi!", Toast.LENGTH_SHORT).show()
+                            sheet.dismiss()
+                            renderMainWorkspace()
+                            val updatedPerson = db.getPersonByName(client.name, isSupplier)
+                            if (updatedPerson != null) {
+                                showPersonFullHistoryAndActionSheet(updatedPerson, isSupplier)
+                            }
+                        }
+                    })
+                }
+
+                wrap.addView(txCard)
+            }
+        }
+
+        scroll.addView(wrap)
+        sheet.setContentView(scroll)
+        sheet.show()
+    }
+
+    // ==================== TAB 1, 2, 3, 4 ====================
     private fun buildKassaTab(): View {
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply {
@@ -1908,45 +2232,6 @@ class MainActivity : AppCompatActivity() {
         })
         col.addView(midRow)
 
-        val payFilterRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 16 }
-        }
-        listOf("Hammasi", "Naqd", "Boshqa").forEach { pf ->
-            val sel = (kassaPayFilter == pf)
-            payFilterRow.addView(TextView(this).apply {
-                text = pf
-                textSize = 13f
-                setTypeface(null, Typeface.BOLD)
-                setTextColor(if (sel) Color.parseColor("#4F46E5") else Color.parseColor("#1E293B"))
-                background = glossyCard(if (sel) "#E0E7FF" else "#FFFFFF", if (sel) "#6366F1" else "#E2E8F0", 40f)
-                setPadding(36, 18, 36, 18)
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { rightMargin = 14 }
-                setOnClickListener { kassaPayFilter = pf; renderMainWorkspace() }
-            })
-        }
-        col.addView(payFilterRow)
-
-        val periodScroll = HorizontalScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 24 }
-        }
-        val periodRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf("14 kun", "Shu oy", "30 kun", "1 yil", "Barchasi").forEach { pr ->
-            val sel = (kassaPeriodFilter == pr)
-            periodRow.addView(TextView(this).apply {
-                text = pr
-                textSize = 12.5f
-                setTypeface(null, Typeface.BOLD)
-                setTextColor(if (sel) Color.parseColor("#4F46E5") else Color.parseColor("#1E293B"))
-                background = glossyCard(if (sel) "#E0E7FF" else "#FFFFFF", if (sel) "#6366F1" else "#E2E8F0", 40f)
-                setPadding(32, 16, 32, 16)
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { rightMargin = 12 }
-                setOnClickListener { kassaPeriodFilter = pr; renderMainWorkspace() }
-            })
-        }
-        periodScroll.addView(periodRow)
-        col.addView(periodScroll)
-
         val actionRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 22 }
@@ -1997,7 +2282,6 @@ class MainActivity : AppCompatActivity() {
         return scroll
     }
 
-    // ==================== TAB 2: MAHSULOT VA OMBOR (REAL-TIME QIDIRUV BILAN!) ====================
     private fun buildMahsulotTab(): View {
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply {
@@ -2024,26 +2308,6 @@ class MainActivity : AppCompatActivity() {
             })
         }
         col.addView(topGrid1)
-
-        val topGrid2 = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 20 }
-        }
-        listOf("Qaytarish / Hisobdan chiqarish", "Kirimlar").forEach { t ->
-            val sel = (mahsulotTopTab == t)
-            topGrid2.addView(TextView(this).apply {
-                text = t
-                gravity = Gravity.CENTER
-                textSize = 12.5f
-                setTypeface(null, Typeface.BOLD)
-                setTextColor(if (sel) Color.WHITE else Color.parseColor("#1E293B"))
-                background = if (sel) glossyPurpleGrad(30f) else glossyCard("#FFFFFF", "#E2E8F0", 30f)
-                setPadding(16, 24, 16, 24)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = 8 }
-                setOnClickListener { mahsulotTopTab = t; renderMainWorkspace() }
-            })
-        }
-        col.addView(topGrid2)
 
         val searchRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -2084,7 +2348,7 @@ class MainActivity : AppCompatActivity() {
                     setPadding(44, 70, 44, 70)
                 }
                 emptyCard.addView(TextView(this).apply {
-                    text = if (q.isNotEmpty()) "'$q' bo'yicha mahsulot topilmadi" else "📦 Omborda mahsulot yo'q\nBirinchi yetkazib berishni qabul qilish uchun pastdagi tugmani bosing"
+                    text = if (q.isNotEmpty()) "'$q' bo'yicha mahsulot topilmadi" else "📦 Omborda mahsulot yo'q"
                     gravity = Gravity.CENTER
                     setTextColor(Color.parseColor("#64748B"))
                     textSize = 14f
@@ -2141,8 +2405,7 @@ class MainActivity : AppCompatActivity() {
             "📸  Tokchadan mahsulot qo'shish (AI Skan)" to {
                 Toast.makeText(this, "📸 Tokchadan AI skaner: Rasm tanlang (Bepul skanlar: 1)", Toast.LENGTH_LONG).show()
             },
-            "🧾  Nakladnoydan kirim qilish" to { openAddProductDialog() },
-            "🕒  Kirimlar tarixi" to { mahsulotTopTab = "Kirimlar"; renderMainWorkspace() }
+            "🧾  Nakladnoydan kirim qilish" to { openAddProductDialog() }
         )
         items.forEach { (title, act) ->
             wrap.addView(TextView(this).apply {
@@ -2160,7 +2423,6 @@ class MainActivity : AppCompatActivity() {
         sheet.show()
     }
 
-    // ==================== TAB 3: STATISTIKA ====================
     private fun buildStatistikaTab(): View {
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply {
@@ -2189,78 +2451,6 @@ class MainActivity : AppCompatActivity() {
             })
         }
         col.addView(topTabs)
-
-        if (statTopTab == "Mahsulotlar") {
-            val subRow = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 20 }
-            }
-            listOf("Sotuv", "Qoldiq", "Kirim").forEach { st ->
-                val sel = (statProdSubTab == st)
-                subRow.addView(TextView(this).apply {
-                    text = st
-                    textSize = 13.5f
-                    setTypeface(null, Typeface.BOLD)
-                    setTextColor(if (sel) Color.WHITE else Color.parseColor("#1E293B"))
-                    background = if (sel) glossyPurpleGrad(26f) else glossyCard("#FFFFFF", "#E2E8F0", 26f)
-                    setPadding(34, 20, 34, 20)
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { rightMargin = 12 }
-                    setOnClickListener { statProdSubTab = st; renderMainWorkspace() }
-                })
-            }
-            col.addView(subRow)
-
-            val prods = db.getProducts()
-            var omborVal = 0L
-            var sotuvVal = 0L
-            prods.forEach { omborVal += it.costPrice * it.qty; sotuvVal += it.salePrice * it.qty }
-
-            val purpleCard = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                background = glossyPurpleGrad(42f)
-                elevation = 10f
-                setPadding(40, 38, 40, 38)
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 20 }
-            }
-            purpleCard.addView(TextView(this).apply {
-                text = "Ombor qiymati"
-                setTextColor(Color.parseColor("#E0E7FF"))
-                textSize = 14f
-            })
-            purpleCard.addView(TextView(this).apply {
-                text = formatMoney(omborVal, "UZS")
-                setTextColor(Color.WHITE)
-                textSize = 26f
-                setTypeface(null, Typeface.BOLD)
-                setPadding(0, 8, 0, 18)
-            })
-            purpleCard.addView(TextView(this).apply {
-                text = "Sotuv narxi: ${formatMoney(sotuvVal, "UZS")}     |     Kutilayotgan foyda: ${formatMoney(sotuvVal - omborVal, "UZS")}"
-                setTextColor(Color.WHITE)
-                textSize = 12.5f
-            })
-            col.addView(purpleCard)
-
-            val statusGrid = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            }
-            listOf("🔴 Tugagan\n0", "🟠 Tugayotgan\n0", "⚪ O'lik tovar\n0").forEach { lbl ->
-                statusGrid.addView(TextView(this).apply {
-                    text = lbl
-                    gravity = Gravity.CENTER
-                    setTextColor(Color.parseColor("#0F172A"))
-                    textSize = 13f
-                    setTypeface(null, Typeface.BOLD)
-                    background = glossyCard("#FFFFFF", "#E2E8F0", 30f)
-                    setPadding(20, 28, 20, 28)
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(6, 0, 6, 0) }
-                })
-            }
-            col.addView(statusGrid)
-            scroll.addView(col)
-            return scroll
-        }
 
         val isSup = (statTopTab == "Ta'minotchilar")
         val persons = db.getPersons(isSup)
@@ -2292,7 +2482,7 @@ class MainActivity : AppCompatActivity() {
             setTypeface(null, Typeface.BOLD)
         })
         qarzCard.addView(TextView(this).apply {
-            text = "\nJami qarz: ${formatMoney(jamiQarz, "UZS")}\nMijozlar soni: ${persons.size} ta mijoz"
+            text = "\nJami qarz: ${formatMoney(jamiQarz, "UZS")}\nRo'yxat soni: ${persons.size} ta"
             setTextColor(Color.parseColor("#0F172A"))
             textSize = 16f
             setTypeface(null, Typeface.BOLD)
@@ -2303,7 +2493,6 @@ class MainActivity : AppCompatActivity() {
         return scroll
     }
 
-    // ==================== TAB 4: PROFIL ====================
     private fun buildProfilTab(): View {
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply {
@@ -2372,9 +2561,9 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { showVoiceSettingsDialog() }
         }
         smsCard.addView(TextView(this).apply {
-            text = "💬 SMS va 📞 Fonda Avto-Qo'ng'iroq Bot  •  Yoniq"
+            text = "💬 SIM Avto-SMS va 📞 Fonda Avto-Qo'ng'iroq  •  Yoniq"
             setTextColor(Color.parseColor("#059669"))
-            textSize = 15.5f
+            textSize = 15f
             setTypeface(null, Typeface.BOLD)
         })
         smsCard.addView(View(this).apply {
@@ -2391,7 +2580,6 @@ class MainActivity : AppCompatActivity() {
             "👑 Super-Admin Panelga Kirish (Login: admin / Parol: hasan2026)" to {
                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$SERVER_URL/admin")))
             },
-            "🖨 Printer sozlamalari (58mm / 80mm / A4)" to { showPrinterSettingsDialog() },
             "👨‍💻 Dastur haqida: Hasan Jaylovov (@HasanJaylovov)" to { showDeveloperDialog() }
         )
         settingsList.forEach { (title, act) ->
@@ -2478,8 +2666,7 @@ class MainActivity : AppCompatActivity() {
         return bar
     }
 
-    // ==================== 3. MEDIASTORE CONTENT URI BILAN .XLSX SAQLASH VA TELEGRAMGA BEXATO ULASHISH ====================
-    // Dastur o'chirilsa ham telefonning Download/QarzFy papkasidan o'chmaydigan Avto-Save funksiyasi:
+    // ==================== 3. MEDIASTORE CONTENT URI BILAN .XLSX SAQLASH VA TELEGRAMGA ULASHISH ====================
     private fun savePermanentBackupToDownloadsQarzFy() {
         val xlsxBytes = generateRealXlsxZipBytes()
         val fileName = "QarzFy_AvtoBazasi.xlsx"
@@ -2510,7 +2697,6 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {}
     }
 
-    // Telegram/Bluetooth "Unsupported attachment" demasligi uchun rasmiy content:// URI qaytaradi!
     private fun saveRealXlsxAndGetShareableUri(): Triple<File, String, Uri> {
         val dateTag = SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.getDefault()).format(Date())
         val fileName = "QarzFy_Hisobot_$dateTag.xlsx"
@@ -2522,7 +2708,6 @@ class MainActivity : AppCompatActivity() {
         val xlsxBytes = generateRealXlsxZipBytes()
         localXlsx.writeBytes(xlsxBytes)
 
-        // Doimiy zaxira faylni ham yangilaymiz
         savePermanentBackupToDownloadsQarzFy()
 
         var publicPath = "/storage/emulated/0/Download/QarzFy/$fileName"
@@ -2538,7 +2723,7 @@ class MainActivity : AppCompatActivity() {
                 val insertedUri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                 if (insertedUri != null) {
                     contentResolver.openOutputStream(insertedUri)?.use { it.write(xlsxBytes) }
-                    shareUri = insertedUri // Telegram va Bluetooth 100% qabul qiladigan rasmiy content:// URI!
+                    shareUri = insertedUri
                 }
             } else {
                 val pubDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "QarzFy")
@@ -2598,13 +2783,13 @@ class MainActivity : AppCompatActivity() {
         clients.forEach { s1.add(listOf(it.id.toString(), it.name, it.phone, it.balUsd.toString(), it.balUzs.toString(), it.createdAt)) }
 
         val s2 = mutableListOf(listOf("Tranzaksiya ID", "Turi", "Mijoz ismi", "Mijoz telefoni", "Summa", "Valyuta", "Sana", "Tavsif", "Holat"))
-        clientTxs.forEach { s2.add(listOf(it.txId, it.kind, it.personName, it.personPhone, it.amount.toString(), it.currency, it.date, it.note, it.status)) }
+        clientTxs.forEach { s2.add(listOf(it.txId, it.kind, it.personName, it.personPhone, it.amount.toString(), it.currency, it.date, "${it.note} (Muddat: ${it.dueDate})", it.status)) }
 
         val s3 = mutableListOf(listOf("ID", "Ism", "Telefon raqami", "Balans USD", "Balans UZS", "Manzil", "Yaratilgan sana"))
         suppliers.forEach { s3.add(listOf(it.id.toString(), it.name, it.phone, it.balUsd.toString(), it.balUzs.toString(), storeAddress, it.createdAt)) }
 
         val s4 = mutableListOf(listOf("Tranzaksiya ID", "Turi", "Ta'minotchi ismi", "Ta'minotchi telefoni", "Summa", "Valyuta", "Sana", "Tavsif", "Holat"))
-        supTxs.forEach { s4.add(listOf(it.txId, it.kind, it.personName, it.personPhone, it.amount.toString(), it.currency, it.date, it.note, it.status)) }
+        supTxs.forEach { s4.add(listOf(it.txId, it.kind, it.personName, it.personPhone, it.amount.toString(), it.currency, it.date, "${it.note} (Muddat: ${it.dueDate})", it.status)) }
 
         var kIn = 0L; var kOut = 0L
         kassaList.forEach { if (it.type == "Kirim") kIn += it.amount else kOut += it.amount }
@@ -2705,6 +2890,7 @@ class MainActivity : AppCompatActivity() {
                     val (_, path, _) = saveRealXlsxAndGetShareableUri()
                     withContext(Dispatchers.Main) {
                         triggerAutoExportSignalAndNotification(path)
+                        checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
                         Toast.makeText(this@MainActivity, "🔔 00:00 Avto-Eksport saqlandi:\n$path", Toast.LENGTH_LONG).show()
                     }
                     delay(65_000L)
@@ -2714,7 +2900,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ==================== SLIDE-UP BOTTOM SHEETS ====================
+    // ==================== SLIDE-UP BOTTOM SHEETS (KALENDAR MUDDAT TANLASH BILAN!) ====================
     private fun showExportBottomSheet() {
         val sheet = BottomSheetDialog(this)
         val wrap = LinearLayout(this).apply {
@@ -2787,12 +2973,6 @@ class MainActivity : AppCompatActivity() {
             setTypeface(null, Typeface.BOLD)
             setPadding(0, 0, 0, 12)
         })
-        wrap.addView(TextView(this).apply {
-            text = "Download/QarzFy papkasidagi avtomatik saqlangan zaxira fayldan yoki istalgan .xlsx fayldan mijozlarni yuklang:"
-            setTextColor(Color.parseColor("#475569"))
-            textSize = 13f
-            setPadding(0, 0, 0, 20)
-        })
         wrap.addView(Button(this).apply {
             text = "🔄 Download/QarzFy/QarzFy_AvtoBazasi.xlsx dan tiklash"
             setTextColor(Color.WHITE)
@@ -2807,7 +2987,6 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this@MainActivity, "✅ AvtoBazadan $c ta yozuv tiklandi!", Toast.LENGTH_LONG).show()
                     renderMainWorkspace()
                 } else {
-                    Toast.makeText(this@MainActivity, "Fayl tanlash oynasidan tanlang", Toast.LENGTH_SHORT).show()
                     val intent = Intent(Intent.ACTION_GET_CONTENT).apply { type = "*/*"; addCategory(Intent.CATEGORY_OPENABLE) }
                     startActivityForResult(intent, PICK_IMPORT_FILE)
                 }
@@ -2831,14 +3010,15 @@ class MainActivity : AppCompatActivity() {
         sheet.show()
     }
 
-    private fun showClientKirimChiqimBottomSheet(client: ClientRec, isSupplier: Boolean) {
+    // QARZ YOKI TO'LOV QO'SHISH (KALENDAR ORQALI MUDDAT TANLASH BILAN!)
+    private fun showClientKirimChiqimBottomSheet(client: ClientRec, isSupplier: Boolean, defaultKind: String = "Chiqim") {
         val sheet = BottomSheetDialog(this)
         val wrap = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = glossyCard("#FFFFFF", "#E2E8F0", 54f)
             setPadding(48, 32, 48, 56)
         }
-        var selectedKind = "Chiqim"
+        var selectedKind = defaultKind
         val kindSwitchRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             background = glossyCard("#F1F5F9", "#E2E8F0", 32f)
@@ -2880,10 +3060,29 @@ class MainActivity : AppCompatActivity() {
         val etAmount = makeGlassInput("Summani kiriting (UZS) *", "")
         etAmount.inputType = InputType.TYPE_CLASS_NUMBER
         val etNote = makeGlassInput("Izoh / Mahsulot nomi (ixtiyoriy)", "")
-        wrap.addView(etAmount); wrap.addView(etNote)
+
+        var selectedDueDate = if (client.dueDate.isNotBlank() && client.dueDate != "Bugun") client.dueDate else defaultDueDateStr()
+        val btnCalendarPicker = Button(this).apply {
+            text = "📅 Qaytarish muddati: $selectedDueDate (Kalendar)"
+            setTextColor(Color.parseColor("#4F46E5"))
+            textSize = 13.5f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyCard("#EEF2FF", "#6366F1", 30f)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 120).apply { bottomMargin = 18 }
+            setOnClickListener {
+                openCalendarPicker(selectedDueDate) { picked ->
+                    selectedDueDate = picked
+                    text = "📅 Qaytarish muddati: $selectedDueDate (Kalendar)"
+                }
+            }
+        }
+
+        wrap.addView(etAmount)
+        wrap.addView(etNote)
+        wrap.addView(btnCalendarPicker)
 
         wrap.addView(Button(this).apply {
-            text = "✅ Saqlash (Avto-SMS + Fonda Qo'ng'iroq + Avto-Save)"
+            text = "✅ Saqlash (Sana/Vaqti bilan tarixga yozish)"
             setTextColor(Color.WHITE); background = glossyPurpleGrad(34f)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 135)
             setOnClickListener {
@@ -2893,9 +3092,9 @@ class MainActivity : AppCompatActivity() {
                     return@setOnClickListener
                 }
                 val note = etNote.text.toString().trim().ifEmpty { "Tranzaksiya" }
-                db.addOrUpdatePersonTx(client.name, client.phone, amt, "UZS", selectedKind, note, "Bugun", isSupplier)
-                triggerBackgroundSmsAndVoiceCall(client.name, client.phone, amt, selectedKind, note)
-                Toast.makeText(this@MainActivity, "✅ Saqlandi! Download/QarzFy yangilandi, SMS va Fonda Ovozli xabar yuborildi!", Toast.LENGTH_SHORT).show()
+                db.addOrUpdatePersonTx(client.name, client.phone, amt, "UZS", selectedKind, note, selectedDueDate, isSupplier)
+                triggerBackgroundSmsAndVoiceCall(client.name, client.phone, amt, selectedKind, note, selectedDueDate, isSupplier)
+                Toast.makeText(this@MainActivity, "✅ Saqlandi! Muddat: $selectedDueDate", Toast.LENGTH_SHORT).show()
                 sheet.dismiss()
                 renderMainWorkspace()
             }
@@ -2936,7 +3135,7 @@ class MainActivity : AppCompatActivity() {
             val list = db.getPersons(isSupplier, q)
             if (list.isEmpty()) {
                 row.addView(TextView(this).apply {
-                    text = "Mijoz topilmadi. Pastdagi tugma orqali yangi qo'shing."
+                    text = "Topilmadi. Pastdagi tugma orqali yangi qo'shing."
                     setTextColor(Color.parseColor("#94A3B8"))
                     setPadding(16, 30, 16, 30)
                 })
@@ -2973,7 +3172,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         wrap.addView(Button(this).apply {
-            text = if (isSupplier) "➕ Yangi Ta'minotchi va Tranzaksiya" else "➕ Yangi Qarzdor Qo'shish"
+            text = if (isSupplier) "➕ Yangi Ta'minotchi va Qarz Qo'shish" else "➕ Yangi Qarzdor Qo'shish"
             setTextColor(Color.WHITE)
             background = glossyPurpleGrad(34f)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 130).apply { topMargin = 20 }
@@ -2987,6 +3186,7 @@ class MainActivity : AppCompatActivity() {
         sheet.show()
     }
 
+    // YANGI QARZDOR YOKI TA'MINOTCHI QO'SHISH (KALENDAR ORQALI MUDDAT TANLASH BILAN!)
     private fun showAddClientBottomSheet(isSupplier: Boolean) {
         val sheet = BottomSheetDialog(this)
         val wrap = LinearLayout(this).apply {
@@ -2999,20 +3199,37 @@ class MainActivity : AppCompatActivity() {
             setTextColor(Color.parseColor("#0F172A")); textSize = 19f; setTypeface(null, Typeface.BOLD)
             setPadding(0, 0, 0, 18)
         })
-        val etName = makeGlassInput("Ism (masalan: Ali aka) *", "")
+        val etName = makeGlassInput("Ism Familiya (masalan: Ali Valiyev) *", "")
         val etPhone = makeGlassInput("Telefon (+998901234567)", "+998")
         etPhone.inputType = InputType.TYPE_CLASS_PHONE
         val etDebt = makeGlassInput("Qarz summasi (UZS, bo'sh qoldirish mumkin)", "")
         etDebt.inputType = InputType.TYPE_CLASS_NUMBER
         val etNote = makeGlassInput("Izoh / Olingan mahsulotlar", "")
 
+        var selectedDueDate = defaultDueDateStr()
+        val btnCalendar = Button(this).apply {
+            text = "📅 Qarz berish muddati: $selectedDueDate (Kalendar)"
+            setTextColor(Color.parseColor("#4F46E5"))
+            textSize = 13.5f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyCard("#EEF2FF", "#6366F1", 30f)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 120).apply { bottomMargin = 18 }
+            setOnClickListener {
+                openCalendarPicker(selectedDueDate) { picked ->
+                    selectedDueDate = picked
+                    text = "📅 Qarz berish muddati: $selectedDueDate (Kalendar)"
+                }
+            }
+        }
+
         wrap.addView(etName)
         wrap.addView(etPhone)
         wrap.addView(etDebt)
         wrap.addView(etNote)
+        wrap.addView(btnCalendar)
 
         wrap.addView(Button(this).apply {
-            text = "✅ Qo'shish va Saqlash (SMS + Fonda Ovoz + Avto-Save)"
+            text = "✅ Qo'shish va Saqlash"
             setTextColor(Color.WHITE)
             textSize = 14.5f
             setTypeface(null, Typeface.BOLD)
@@ -3025,18 +3242,18 @@ class MainActivity : AppCompatActivity() {
                 val note = etNote.text.toString().trim().ifEmpty { "Qarz yozildi" }
 
                 if (n.isEmpty()) {
-                    Toast.makeText(this@MainActivity, "Iltimos, mijoz ismini kiriting!", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "Iltimos, ism-familiyani kiriting!", Toast.LENGTH_LONG).show()
                     return@setOnClickListener
                 }
 
                 if (d > 0L) {
-                    db.addOrUpdatePersonTx(n, ph, d, "UZS", "Chiqim", note, "Bugun", isSupplier)
-                    triggerBackgroundSmsAndVoiceCall(n, ph, d, "Chiqim", note)
+                    db.addOrUpdatePersonTx(n, ph, d, "UZS", "Chiqim", note, selectedDueDate, isSupplier)
+                    triggerBackgroundSmsAndVoiceCall(n, ph, d, "Chiqim", note, selectedDueDate, isSupplier)
                 } else {
-                    db.upsertClientDirect(n, ph, 0.0, 0L, db.nowStr(), isSupplier)
+                    db.upsertClientDirect(n, ph, 0.0, 0L, db.nowStr(), isSupplier, dueDate = selectedDueDate)
                 }
 
-                Toast.makeText(this@MainActivity, "✅ $n qo'shildi va Download/QarzFy ga avto-saqlandi!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "✅ $n qo'shildi! Muddat: $selectedDueDate", Toast.LENGTH_SHORT).show()
                 searchQuery = ""
                 sheet.dismiss()
                 renderMainWorkspace()
@@ -3082,7 +3299,7 @@ class MainActivity : AppCompatActivity() {
                     } else {
                         parseCsvSmartLines(String(bytes, Charsets.UTF_8).lines())
                     }
-                    Toast.makeText(this, "✅ Jami $importedCount ta yozuv import qilindi va Download/QarzFy ga avto-saqlandi!", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "✅ Jami $importedCount ta yozuv import qilindi!", Toast.LENGTH_LONG).show()
                     renderMainWorkspace()
                 } catch (e: Exception) {
                     Toast.makeText(this, "Import xatosi: ${e.message}", Toast.LENGTH_LONG).show()
@@ -3220,6 +3437,25 @@ class MainActivity : AppCompatActivity() {
                     if (name.isNotEmpty() && !name.equals("Ism", true)) {
                         db.upsertClientDirect(name, phone, usd, uzs, dt, false, triggerAutoBackup = false)
                         totalImported++
+                    }
+                }
+            }
+        }
+        entries["xl/worksheets/sheet2.xml"]?.let { sb ->
+            val rows = parseSingleWorksheetXml(sb, sharedStrings)
+            rows.forEachIndexed { idx, r ->
+                if (idx > 0 && r.size >= 5) {
+                    val txId = r.getOrNull(0)?.trim() ?: ""
+                    val kind = r.getOrNull(1)?.trim() ?: "Chiqim"
+                    val name = r.getOrNull(2)?.trim() ?: ""
+                    val phone = r.getOrNull(3)?.trim() ?: ""
+                    val amt = parseMoneyLong(r.getOrNull(4))
+                    val cur = r.getOrNull(5)?.trim() ?: "UZS"
+                    val dt = r.getOrNull(6)?.trim() ?: ""
+                    val note = r.getOrNull(7)?.trim() ?: ""
+                    val st = r.getOrNull(8)?.trim() ?: "Faol"
+                    if (name.isNotEmpty() && !name.equals("Mijoz ismi", true) && amt > 0) {
+                        db.insertTxDirect(txId, kind, name, phone, amt, cur, dt, "", note, st, false)
                     }
                 }
             }
@@ -3377,13 +3613,9 @@ class MainActivity : AppCompatActivity() {
             }.setNegativeButton("Yopish", null).show()
     }
 
-    private fun showSmsSettingsDialog() {
-        AlertDialog.Builder(this).setTitle("💬 SMS sozlamalari").setMessage("SIM-karta orqali qarzdorlarga fonda avtomatik SMS yuborish yoqilgan.").setPositiveButton("Yopish", null).show()
-    }
-
     private fun showPushSettingsDialog() {
-        AlertDialog.Builder(this).setTitle("🔔 Avto-Save va Bildirishnomalar")
-            .setMessage("• Har bir kirim-chiqim va qarz yozilganda fayl avtomatik Download/QarzFy/QarzFy_AvtoBazasi.xlsx ga saqlanadi (dastur o'chirilsa ham o'chmaydi!).\n• Har kuni soat 00:00 da signal bilan kunlik hisobot saqlanadi.")
+        AlertDialog.Builder(this).setTitle("🔔 Avto-Save va Muddat Avto-SMS")
+            .setMessage("• Har bir kirim-chiqim va qarz yozilganda fayl avtomatik Download/QarzFy/QarzFy_AvtoBazasi.xlsx ga saqlanadi.\n• Qarz muddati kelganda xaridorlar va ta'minotchilarga avtomatik SMS yuboriladi.")
             .setPositiveButton("Tushunarli", null).show()
     }
 
@@ -3391,16 +3623,14 @@ class MainActivity : AppCompatActivity() {
         val statusTxt = if (isAutoVoiceCallEnabled) "✅ Yoqilgan (Fonda ko'rinmas)" else "🔴 O'chirilgan"
         AlertDialog.Builder(this)
             .setTitle("📞 Fonda Avto-Qo'ng'iroq (Bot) Sozlamasi")
-            .setMessage("Holati: $statusTxt\n\nXaridorga qarz yoki to'lov yozilganda, xuddi SMS kabi telefonda umuman ko'rinmasdan va bilinmasdan fonda Bot va Ovozli tizim orqali xaridorga qo'ng'iroq/ovozli ma'lumot yuboriladi.\n\nOvoz: O'zbekcha (Nigora) / Ruscha (Alena) / Inglizcha (Jon)")
+            .setMessage("Holati: $statusTxt\n\nXaridorga yoki ta'minotchiga qarz yozilganda hamda muddati kelganda fonda SMS va ovozli xabar yuboriladi.")
             .setPositiveButton(if (isAutoVoiceCallEnabled) "O'chirish" else "Yoqish") { _, _ ->
                 isAutoVoiceCallEnabled = !isAutoVoiceCallEnabled
                 saveSessionSynchronously(isLoggedIn)
-                Toast.makeText(this, if (isAutoVoiceCallEnabled) "📞 Fonda Avto-Qo'ng'iroq yoqildi!" else "O'chirildi", Toast.LENGTH_SHORT).show()
                 renderMainWorkspace()
             }
             .setNeutralButton("🔊 Ovozni test qilish") { _, _ ->
                 ttsEngine?.speak("Assalomu alaykum! Hurmatli mijoz, do'konimizdan sizga qarz yozildi.", TextToSpeech.QUEUE_FLUSH, null, "test_voice")
-                Toast.makeText(this, "🔊 Ovozli xabar fonda o'qilmoqda...", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Yopish", null)
             .show()
@@ -3431,7 +3661,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showDeveloperDialog() {
         AlertDialog.Builder(this).setTitle("👨‍💻 Dastur haqida")
-            .setMessage("Ilova: QarzFy v10.0 (Glossy Glassmorphism)\nDasturchi: Hasan Jaylovov\nTelegram: @HasanJaylovov")
+            .setMessage("Ilova: QarzFy v11.0 (Glossy Glassmorphism)\nDasturchi: Hasan Jaylovov\nTelegram: @HasanJaylovov")
             .setPositiveButton("Bog'lanish") { _, _ ->
                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/HasanJaylovov")))
             }.setNegativeButton("Yopish", null).show()
@@ -3440,11 +3670,11 @@ class MainActivity : AppCompatActivity() {
     private fun sendBulkSmsReminders(isSupplier: Boolean) {
         var sent = 0
         db.getPersons(isSupplier).forEach { p ->
-            if (p.balUzs < 0) {
-                triggerBackgroundSmsAndVoiceCall(p.name, p.phone, Math.abs(p.balUzs), "Chiqim", "Qarz eslatmasi")
+            if (p.balUzs != 0L) {
+                triggerBackgroundSmsAndVoiceCall(p.name, p.phone, Math.abs(p.balUzs), "Chiqim", "Qarz eslatmasi", p.dueDate, isSupplier)
                 sent++
             }
         }
-        Toast.makeText(this, "📩 $sent ta qarzdorga fonda SMS va Avto-Qo'ng'iroq buyrug'i yuborildi!", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "📩 $sent ta qarzdor/ta'minotchiga SMS va Fonda Qo'ng'iroq yuborildi!", Toast.LENGTH_LONG).show()
     }
 }

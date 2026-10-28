@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 100
-        versionName "10.0-AutoSaveAndVoice"
+        versionCode 110
+        versionName "11.0-FullHistoryAndCalendar"
     }
 
     buildTypes {
