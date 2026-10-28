@@ -317,6 +317,13 @@ class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_m
             val prefix = if (isSupplier) "ST-" else "D-"
             val txId = prefix + (100000 + Random().nextInt(900000))
             insertTxDirect(txId, kind, cleanName, phone.trim(), amount, currency, exactTime, dueDate, note, "Faol", isSupplier)
+            if (kind == "Kirim") {
+                val catName = if (isSupplier) "Ta'minotchi kirimi: $cleanName" else "Qarz to'lovi: $cleanName"
+                writableDatabase.execSQL(
+                    "INSERT INTO kassa (type, category, amount, currency, pay_type, date, note, creator) VALUES ('Kirim', ?, ?, ?, 'Naqd', ?, ?, 'Avto')",
+                    arrayOf<Any>(catName, Math.abs(amount), currency, exactTime, note)
+                )
+            }
         }
         onDataChangedCallback?.invoke()
     }
@@ -326,8 +333,18 @@ class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_m
         if (tx.status.startsWith("O'chirildi")) return
         val db = writableDatabase
         val delTime = nowStr()
-        val newStatus = "O'chirildi ($delTime)"
+        val newStatus = "O'chirildi / Yopildi ($delTime)"
         db.execSQL("UPDATE transactions SET status = ? WHERE id = ?", arrayOf<Any>(newStatus, tx.id))
+        if (tx.kind == "Chiqim") {
+            val payPrefix = if (tx.isSupplier) "ST-PAY-" else "D-PAY-"
+            val payTxId = payPrefix + (100000 + Random().nextInt(900000))
+            insertTxDirect(payTxId, "Kirim", tx.personName, tx.personPhone, tx.amount, tx.currency, delTime, tx.dueDate, "Yopilgan qarz kirimi (${tx.txId})", "Faol", tx.isSupplier)
+            val catName = if (tx.isSupplier) "Ta'minotchi yopilgan kirim: ${tx.personName}" else "Xaridor yopilgan qarz: ${tx.personName}"
+            db.execSQL(
+                "INSERT INTO kassa (type, category, amount, currency, pay_type, date, note, creator) VALUES ('Kirim', ?, ?, ?, 'Naqd', ?, ?, 'Avto')",
+                arrayOf<Any>(catName, Math.abs(tx.amount), tx.currency, delTime, "Qarz yopildi")
+            )
+        }
 
         val supFlag = if (tx.isSupplier) 1 else 0
         val c = db.rawQuery("SELECT id, bal_usd, bal_uzs FROM clients WHERE name = ? AND is_supplier = ?", arrayOf(tx.personName, supFlag.toString()))
@@ -2454,18 +2471,39 @@ class MainActivity : AppCompatActivity() {
 
         val isSup = (statTopTab == "Ta'minotchilar")
         val persons = db.getPersons(isSup)
+        val allTxs = db.getTransactions(isSup)
+
         var jamiQarz = 0L
         var haqdorSum = 0L
         persons.forEach {
             if (it.balUzs < 0) jamiQarz += Math.abs(it.balUzs) else haqdorSum += it.balUzs
         }
 
+        var jamiKirimTx = 0L
+        var jamiChiqimTx = 0L
+        allTxs.forEach { tx ->
+            if (tx.kind == "Kirim") {
+                jamiKirimTx += Math.abs(tx.amount)
+            } else if (!tx.status.startsWith("O'chirildi")) {
+                jamiChiqimTx += Math.abs(tx.amount)
+            }
+        }
+        val totalKirimBalans = jamiKirimTx + haqdorSum
+
+        val topTxGrid = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 14 }
+        }
+        topTxGrid.addView(profileGridCard("🟢 Jami Kirim (${if (isSup) "Ta'minotchi" else "Qaytgan pul"})", formatMoney(jamiKirimTx, "UZS")) {})
+        topTxGrid.addView(profileGridCard("🔴 Jami Chiqim (Berilgan qarz)", formatMoney(jamiChiqimTx, "UZS")) {})
+        col.addView(topTxGrid)
+
         val balGrid = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 18 }
         }
+        balGrid.addView(profileGridCard("🟢 Kirim balansi ⓘ", formatMoney(totalKirimBalans, "UZS")) {})
         balGrid.addView(profileGridCard("🔴 Chiqim balansi ⓘ", formatMoney(jamiQarz, "UZS")) {})
-        balGrid.addView(profileGridCard("🟢 Kirim balansi ⓘ", formatMoney(haqdorSum, "UZS")) {})
         col.addView(balGrid)
 
         val qarzCard = LinearLayout(this).apply {
@@ -2482,9 +2520,9 @@ class MainActivity : AppCompatActivity() {
             setTypeface(null, Typeface.BOLD)
         })
         qarzCard.addView(TextView(this).apply {
-            text = "\nJami qarz: ${formatMoney(jamiQarz, "UZS")}\nRo'yxat soni: ${persons.size} ta"
+            text = "\n🟢 Qaytarilgan / Yopilgan kirimlar: ${formatMoney(jamiKirimTx, "UZS")}\n🔴 Qolgan jami qarz: ${formatMoney(jamiQarz, "UZS")}\n👥 Ro'yxat soni: ${persons.size} ta (${allTxs.size} ta amal)"
             setTextColor(Color.parseColor("#0F172A"))
-            textSize = 16f
+            textSize = 15f
             setTypeface(null, Typeface.BOLD)
         })
         col.addView(qarzCard)
