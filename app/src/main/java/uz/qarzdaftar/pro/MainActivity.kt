@@ -617,7 +617,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadPrefsAndRestoreSession() {
-        isLoggedIn = prefs.getBoolean("is_logged_in", false)
+        // Foydalanuvchi v12.0 da Login ekranini aniq ko'rishi uchun v12_auth_done flagini tekshiramiz
+        val v12AuthDone = prefs.getBoolean("v12_auth_done", false)
+        isLoggedIn = v12AuthDone && prefs.getBoolean("is_logged_in", false)
         userPhone = prefs.getString("user_phone", "") ?: ""
         userPassword = prefs.getString("user_password", "") ?: ""
         storeId = prefs.getString("store_id", "QF-101") ?: "QF-101"
@@ -632,20 +634,6 @@ class MainActivity : AppCompatActivity() {
         price6Month = prefs.getLong("price_6m", 255000L)
         adminCardNumber = prefs.getString("card_number", "9860 0000 0000 0000") ?: "9860 0000 0000 0000"
         adminCardOwner = prefs.getString("card_owner", "HASAN JAYLOVOV") ?: "HASAN JAYLOVOV"
-
-        if (userPhone.isBlank()) {
-            val savedAcc = db.getLastSavedAccount()
-            if (savedAcc != null) {
-                userPhone = savedAcc["phone"] ?: ""
-                userPassword = savedAcc["password"] ?: ""
-                storeId = savedAcc["store_id"] ?: "QF-101"
-                storeName = savedAcc["store_name"] ?: "Hasan Jaylovov"
-                storeAddress = savedAcc["store_address"] ?: "O'zbekiston"
-                storeCategory = savedAcc["store_category"] ?: "Umumiy"
-                mainCurrency = savedAcc["currency"] ?: "UZS"
-                subscriptionExpiryMillis = savedAcc["sub_expiry"]?.toLongOrNull() ?: (System.currentTimeMillis() + 864000000L)
-            }
-        }
     }
 
     private fun restoreFromPermanentDownloadsBackupIfEmpty() {
@@ -662,6 +650,7 @@ class MainActivity : AppCompatActivity() {
     private fun saveSessionSynchronously(loggedIn: Boolean) {
         isLoggedIn = loggedIn
         prefs.edit()
+            .putBoolean("v12_auth_done", loggedIn)
             .putBoolean("is_logged_in", loggedIn)
             .putString("user_phone", userPhone)
             .putString("user_password", userPassword)
@@ -1234,221 +1223,340 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ==================== 1. KIRISH VA RO'YXATDAN O'TISH EKRANI ====================
+    // ==================== 1. KIRISH (LOGIN) VA YANGI RAQAM/PAROL QO'SHISH EKRANI ====================
+    private var isRegisterMode = false
+
     private fun renderOnboardingAndLogin() {
         rootLayout.removeAllViews()
         rootLayout.setBackgroundColor(Color.parseColor("#EEF2FF"))
-        val scroll = ScrollView(this)
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(44, 50, 44, 60)
-            gravity = Gravity.CENTER_HORIZONTAL
+
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            )
         }
 
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 48, 40, 80)
+            gravity = Gravity.CENTER_HORIZONTAL
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        // Yuqori Glossy Banner
         val heroCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            background = glossyPurpleGrad(54f)
-            setPadding(44, 44, 44, 44)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 24 }
+            background = glossyPurpleGrad(48f)
+            elevation = 12f
+            setPadding(40, 40, 40, 40)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 24 }
         }
         heroCard.addView(ImageView(this).apply {
             setImageResource(R.drawable.ic_qarzdaftar_logo)
-            layoutParams = LinearLayout.LayoutParams(170, 170).apply { bottomMargin = 14 }
+            layoutParams = LinearLayout.LayoutParams(150, 150).apply { bottomMargin = 12 }
         })
         heroCard.addView(TextView(this).apply {
-            text = "QarzFy Tizimiga Xush Kelibsiz!"
+            text = "QarzFy Tizimiga Kirish"
             setTextColor(Color.WHITE)
-            textSize = 20f
+            textSize = 21f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
         })
         heroCard.addView(TextView(this).apply {
-            text = "Barcha mijozlar va hisoblar Download/QarzFy papkasida doimiy saqlanadi."
+            text = "Telefon raqamingiz va parolingiz orqali kiring yoki yangi raqam va parol qo'shib ro'yxatdan o'ting"
             setTextColor(Color.parseColor("#E0E7FF"))
             textSize = 12.5f
             gravity = Gravity.CENTER
-            setPadding(10, 8, 10, 0)
+            setPadding(8, 8, 8, 0)
         })
         container.addView(heroCard)
 
+        // 2 ta Tab: [ 🔑 Kirish (Login) ]  |  [ ➕ Raqam / Parol Qo'shish ]
+        val modeSwitchRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = glossyCard("#FFFFFF", "#CBD5E1", 36f)
+            elevation = 8f
+            setPadding(10, 10, 10, 10)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 22 }
+        }
+
+        val tabLogin = TextView(this).apply {
+            text = "🔑 Kirish (Login)"
+            gravity = Gravity.CENTER
+            textSize = 13.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(if (!isRegisterMode) Color.WHITE else Color.parseColor("#334155"))
+            background = if (!isRegisterMode) glossyPurpleGrad(28f) else null
+            setPadding(16, 24, 16, 24)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener {
+                isRegisterMode = false
+                renderOnboardingAndLogin()
+            }
+        }
+
+        val tabRegister = TextView(this).apply {
+            text = "➕ Raqam va Parol Qo'shish"
+            gravity = Gravity.CENTER
+            textSize = 13.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(if (isRegisterMode) Color.WHITE else Color.parseColor("#334155"))
+            background = if (isRegisterMode) glossyOrangeGrad(28f) else null
+            setPadding(16, 24, 16, 24)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener {
+                isRegisterMode = true
+                renderOnboardingAndLogin()
+            }
+        }
+
+        modeSwitchRow.addView(tabLogin)
+        modeSwitchRow.addView(tabRegister)
+        container.addView(modeSwitchRow)
+
+        // Oq Asosiy Forma Kartasi
         val formCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = glossyCard("#FFFFFFFF", "#CBD5E1", 48f)
-            elevation = 16f
-            setPadding(40, 40, 40, 40)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            background = glossyCard("#FFFFFF", "#94A3B8", 44f)
+            elevation = 14f
+            setPadding(40, 40, 40, 44)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
         }
 
         val savedAcc = db.getLastSavedAccount()
-        val initPhone = if (userPhone.isNotBlank()) userPhone else (savedAcc?.get("phone") ?: "+998")
-        val initStore = if (storeName.isNotBlank()) storeName else (savedAcc?.get("store_name") ?: "Hasan Jaylovov")
-        val initAddr = if (storeAddress.isNotBlank()) storeAddress else (savedAcc?.get("store_address") ?: "O'zbekiston, Surxondaryo")
+        val defaultPhone = if (userPhone.isNotBlank()) userPhone else (savedAcc?.get("phone") ?: "+998")
+        val defaultStore = if (storeName.isNotBlank()) storeName else (savedAcc?.get("store_name") ?: "")
+        val defaultAddr = if (storeAddress.isNotBlank()) storeAddress else (savedAcc?.get("store_address") ?: "O'zbekiston")
 
         formCard.addView(TextView(this).apply {
-            text = "📱 Telefon raqami:"
+            text = if (!isRegisterMode) "🔑 Mavjud hisobingizga kiring" else "➕ Yangi telefon raqam, login va parol qo'shish"
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 16.5f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(4, 0, 4, 18)
+        })
+
+        // 1. TELEFON RAQAM MAYDONI
+        formCard.addView(TextView(this).apply {
+            text = "📱 Telefon raqamingiz (Login) *"
             setTextColor(Color.parseColor("#1E293B"))
             textSize = 13.5f
             setTypeface(null, Typeface.BOLD)
-            setPadding(2, 0, 2, 6)
+            setPadding(4, 0, 4, 8)
         })
         val etPhone = EditText(this).apply {
-            hint = "+998 90 995 82 97"
-            setText(initPhone)
+            hint = "Masalan: +998909958297"
+            setText(defaultPhone)
             setTextColor(Color.parseColor("#0F172A"))
             setHintTextColor(Color.parseColor("#94A3B8"))
-            textSize = 15f
+            textSize = 15.5f
+            setSingleLine(true)
             inputType = InputType.TYPE_CLASS_PHONE
-            background = glossyCard("#F8FAFC", "#94A3B8", 28f)
-            setPadding(32, 24, 32, 24)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 14 }
+            background = glossyCard("#F8FAFC", "#6366F1", 28f)
+            setPadding(34, 28, 34, 28)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 18 }
         }
         formCard.addView(etPhone)
 
+        // 2. PAROL MAYDONI
         formCard.addView(TextView(this).apply {
-            text = "🔒 Parol:"
+            text = "🔒 Parol *"
             setTextColor(Color.parseColor("#1E293B"))
             textSize = 13.5f
             setTypeface(null, Typeface.BOLD)
-            setPadding(2, 0, 2, 6)
+            setPadding(4, 0, 4, 8)
         })
         val etPass = EditText(this).apply {
-            hint = "Maxfiy parol"
-            setText(userPassword)
+            hint = "Parolni kiriting..."
+            setText("")
             setTextColor(Color.parseColor("#0F172A"))
             setHintTextColor(Color.parseColor("#94A3B8"))
-            textSize = 15f
+            textSize = 15.5f
+            setSingleLine(true)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            background = glossyCard("#F8FAFC", "#94A3B8", 28f)
-            setPadding(32, 24, 32, 24)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 14 }
+            background = glossyCard("#F8FAFC", "#6366F1", 28f)
+            setPadding(34, 28, 34, 28)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 18 }
         }
         formCard.addView(etPass)
 
-        formCard.addView(TextView(this).apply {
-            text = "🏪 Do'kon nomi (Yangi ochish uchun):"
-            setTextColor(Color.parseColor("#475569"))
-            textSize = 13.5f
-            setTypeface(null, Typeface.BOLD)
-            setPadding(2, 6, 2, 6)
-        })
         val etStore = EditText(this).apply {
-            hint = "Do'kon yoki Biznes nomi"
-            setText(initStore)
+            hint = "Do'kon yoki ismingiz (masalan: Hasan Jaylovov)"
+            setText(defaultStore)
             setTextColor(Color.parseColor("#0F172A"))
             setHintTextColor(Color.parseColor("#94A3B8"))
             textSize = 15f
+            setSingleLine(true)
             background = glossyCard("#F8FAFC", "#94A3B8", 28f)
-            setPadding(32, 24, 32, 24)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 14 }
+            setPadding(34, 26, 34, 26)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 16 }
         }
-        formCard.addView(etStore)
 
         val etAddr = EditText(this).apply {
-            hint = "Manzil (viloyat, tuman)"
-            setText(initAddr)
+            hint = "Manzil (masalan: O'zbekiston, Surxondaryo)"
+            setText(defaultAddr)
             setTextColor(Color.parseColor("#0F172A"))
             setHintTextColor(Color.parseColor("#94A3B8"))
             textSize = 15f
+            setSingleLine(true)
             background = glossyCard("#F8FAFC", "#94A3B8", 28f)
-            setPadding(32, 24, 32, 24)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 14 }
+            setPadding(34, 26, 34, 26)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 18 }
         }
-        formCard.addView(etAddr)
 
-        formCard.addView(TextView(this).apply {
-            text = "🔑 Telefon va Parol:"
-            setTextColor(Color.parseColor("#1E293B"))
-            textSize = 14f
-            setTypeface(null, Typeface.BOLD)
-            setPadding(4, 0, 4, 12)
-        })
-        formCard.addView(etPhone)
-        formCard.addView(etPass)
+        if (isRegisterMode) {
+            formCard.addView(TextView(this).apply {
+                text = "🏪 Do'kon nomi *"
+                setTextColor(Color.parseColor("#1E293B"))
+                textSize = 13.5f
+                setTypeface(null, Typeface.BOLD)
+                setPadding(4, 0, 4, 8)
+            })
+            formCard.addView(etStore)
 
-        val btnLoginExisting = Button(this).apply {
-            text = "🔑 Mavjud Hisobga Kirish"
-            setTextColor(Color.WHITE)
-            textSize = 15f
-            setTypeface(null, Typeface.BOLD)
-            background = glossyPurpleGrad(36f)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 130).apply { topMargin = 8; bottomMargin = 20 }
-            setOnClickListener {
-                val ph = etPhone.text.toString().trim()
-                val pw = etPass.text.toString().trim()
-                if (ph.length < 9 || pw.isEmpty()) {
-                    Toast.makeText(this@MainActivity, "Telefon raqam va parolni kiriting!", Toast.LENGTH_LONG).show()
-                    return@setOnClickListener
+            formCard.addView(TextView(this).apply {
+                text = "📍 Manzil"
+                setTextColor(Color.parseColor("#1E293B"))
+                textSize = 13.5f
+                setTypeface(null, Typeface.BOLD)
+                setPadding(4, 0, 4, 8)
+            })
+            formCard.addView(etAddr)
+        }
+
+        if (!isRegisterMode) {
+            // KIRISH TUGMASI
+            formCard.addView(Button(this).apply {
+                text = "🔑 Hisobga Kirish"
+                setTextColor(Color.WHITE)
+                textSize = 15.5f
+                setTypeface(null, Typeface.BOLD)
+                background = glossyPurpleGrad(34f)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    135
+                ).apply { topMargin = 8; bottomMargin = 16 }
+                setOnClickListener {
+                    val ph = etPhone.text.toString().trim()
+                    val pw = etPass.text.toString().trim()
+                    if (ph.length < 7 || pw.isEmpty()) {
+                        Toast.makeText(this@MainActivity, "⚠️ Telefon raqam va parolni kiriting!", Toast.LENGTH_LONG).show()
+                        return@setOnClickListener
+                    }
+                    val acc = db.findAccount(ph)
+                    if (acc != null) {
+                        val savedPw = acc["password"] ?: ""
+                        if (savedPw.isNotEmpty() && savedPw != pw) {
+                            Toast.makeText(this@MainActivity, "❌ Parol noto'g'ri! Qayta tekshiring yoki yangi ro'yxatdan o'ting.", Toast.LENGTH_LONG).show()
+                            return@setOnClickListener
+                        }
+                        userPhone = ph
+                        userPassword = pw
+                        storeId = acc["store_id"] ?: ("QF-" + Math.abs(ph.hashCode() % 90000 + 10000))
+                        storeName = acc["store_name"] ?: "Do'kon"
+                        storeAddress = acc["store_address"] ?: "O'zbekiston"
+                        storeCategory = acc["store_category"] ?: "Qurilish mollari"
+                        val savedExp = acc["sub_expiry"]?.toLongOrNull() ?: 0L
+                        if (savedExp > subscriptionExpiryMillis) subscriptionExpiryMillis = savedExp
+                    } else {
+                        userPhone = ph
+                        userPassword = pw
+                        storeName = defaultStore.ifEmpty { "Do'kon" }
+                        storeAddress = defaultAddr.ifEmpty { "O'zbekiston" }
+                        storeId = "QF-" + Math.abs(ph.hashCode() % 90000 + 10000)
+                        if (subscriptionExpiryMillis <= 0L) {
+                            subscriptionExpiryMillis = System.currentTimeMillis() + (10L * 24L * 60L * 60L * 1000L)
+                        }
+                    }
+                    saveSessionSynchronously(true)
+                    syncStoreWithAdminServer(userPhone, userPassword)
+                    Toast.makeText(this@MainActivity, "✅ Xush kelibsiz, $storeName!", Toast.LENGTH_SHORT).show()
+                    renderMainWorkspace()
+                    scheduleMidnightAutoExcelSaveWithSignal()
+                    checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
                 }
-                val acc = db.findAccount(ph)
-                userPhone = ph
-                userPassword = pw
-                if (acc != null) {
-                    storeId = acc["store_id"] ?: ("QF-" + Math.abs(ph.hashCode() % 90000 + 10000))
-                    storeName = acc["store_name"] ?: etStore.text.toString().trim().ifEmpty { "Do'kon" }
-                    storeAddress = acc["store_address"] ?: etAddr.text.toString().trim()
-                    storeCategory = acc["store_category"] ?: "Qurilish mollari"
-                    val savedExp = acc["sub_expiry"]?.toLongOrNull() ?: 0L
-                    if (savedExp > subscriptionExpiryMillis) subscriptionExpiryMillis = savedExp
-                } else {
-                    storeName = etStore.text.toString().trim().ifEmpty { "Hasan Jaylovov" }
+            })
+
+            formCard.addView(Button(this).apply {
+                text = "➕ Yangi raqam va parol qo'shish (Ro'yxatdan o'tish)"
+                setTextColor(Color.parseColor("#4F46E5"))
+                textSize = 13f
+                setTypeface(null, Typeface.BOLD)
+                background = glossyCard("#EEF2FF", "#6366F1", 30f)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    120
+                )
+                setOnClickListener {
+                    isRegisterMode = true
+                    renderOnboardingAndLogin()
+                }
+            })
+        } else {
+            // RO'YXATDAN O'TISH TUGMASI
+            formCard.addView(Button(this).apply {
+                text = "🚀 Saqlash va Ro'yxatdan O'tish (10 kun bepul)"
+                setTextColor(Color.WHITE)
+                textSize = 15f
+                setTypeface(null, Typeface.BOLD)
+                background = glossyOrangeGrad(34f)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    135
+                ).apply { topMargin = 8; bottomMargin = 16 }
+                setOnClickListener {
+                    val ph = etPhone.text.toString().trim()
+                    val pw = etPass.text.toString().trim()
+                    val st = etStore.text.toString().trim()
+                    if (ph.length < 7 || pw.isEmpty() || st.isEmpty()) {
+                        Toast.makeText(this@MainActivity, "⚠️ Telefon raqam, parol va do'kon nomini to'liq kiriting!", Toast.LENGTH_LONG).show()
+                        return@setOnClickListener
+                    }
+                    userPhone = ph
+                    userPassword = pw
+                    storeName = st
                     storeAddress = etAddr.text.toString().trim().ifEmpty { "O'zbekiston" }
                     storeId = "QF-" + Math.abs(ph.hashCode() % 90000 + 10000)
-                    if (subscriptionExpiryMillis <= 0L) {
+                    if (subscriptionExpiryMillis <= System.currentTimeMillis()) {
                         subscriptionExpiryMillis = System.currentTimeMillis() + (10L * 24L * 60L * 60L * 1000L)
                     }
+
+                    saveSessionSynchronously(true)
+                    syncStoreWithAdminServer(ph, pw)
+                    Toast.makeText(this@MainActivity, "✅ Yangi hisob saqlandi! Do'kon ID: $storeId", Toast.LENGTH_LONG).show()
+                    renderMainWorkspace()
+                    scheduleMidnightAutoExcelSaveWithSignal()
+                    checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
                 }
-                saveSessionSynchronously(true)
-                syncStoreWithAdminServer(userPhone, userPassword)
-                renderMainWorkspace()
-                scheduleMidnightAutoExcelSaveWithSignal()
-                checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
-            }
+            })
         }
-        formCard.addView(btnLoginExisting)
-
-        formCard.addView(TextView(this).apply {
-            text = "🏪 Yangi Do'kon Ma'lumotlari:"
-            setTextColor(Color.parseColor("#475569"))
-            textSize = 13f
-            setTypeface(null, Typeface.BOLD)
-            setPadding(4, 8, 4, 10)
-        })
-        formCard.addView(etStore)
-        formCard.addView(etAddr)
-
-        val btnRegisterNew = Button(this).apply {
-            text = "🚀 Yangi Ro'yxatdan O'tish (10 kun bepul)"
-            setTextColor(Color.WHITE)
-            textSize = 14.5f
-            setTypeface(null, Typeface.BOLD)
-            background = glossyOrangeGrad(36f)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 130).apply { topMargin = 8 }
-            setOnClickListener {
-                val ph = etPhone.text.toString().trim()
-                val pw = etPass.text.toString().trim()
-                val st = etStore.text.toString().trim()
-                if (ph.length < 9 || pw.isEmpty() || st.isEmpty()) {
-                    Toast.makeText(this@MainActivity, "Do'kon nomi, telefon va parolni kiriting!", Toast.LENGTH_LONG).show()
-                    return@setOnClickListener
-                }
-                userPhone = ph
-                userPassword = pw
-                storeName = st
-                storeAddress = etAddr.text.toString().trim()
-                storeId = "QF-" + Math.abs(ph.hashCode() % 90000 + 10000)
-                if (subscriptionExpiryMillis <= System.currentTimeMillis()) {
-                    subscriptionExpiryMillis = System.currentTimeMillis() + (10L * 24L * 60L * 60L * 1000L)
-                }
-
-                saveSessionSynchronously(true)
-                syncStoreWithAdminServer(ph, pw)
-                renderMainWorkspace()
-                scheduleMidnightAutoExcelSaveWithSignal()
-                checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
-            }
-        }
-        formCard.addView(btnRegisterNew)
 
         container.addView(formCard)
         scroll.addView(container)
@@ -1785,11 +1893,23 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { showQrCodeAndOpenPageDialog() }
         }
 
+        val logoutQuickBtn = FrameLayout(this).apply {
+            background = glossyRedGrad(28f)
+            elevation = 6f
+            layoutParams = LinearLayout.LayoutParams(105, 105).apply { leftMargin = 8 }
+            addView(TextView(this@MainActivity).apply {
+                text = "🔑"
+                gravity = Gravity.CENTER
+                textSize = 17f
+            })
+            setOnClickListener { performLogout() }
+        }
         header.addView(menuIcon)
         header.addView(logoImg)
         header.addView(storeTitle)
         header.addView(chatHeaderBtn)
         header.addView(qrBtn)
+        header.addView(logoutQuickBtn)
         col.addView(header)
 
         val banner = LinearLayout(this).apply {
