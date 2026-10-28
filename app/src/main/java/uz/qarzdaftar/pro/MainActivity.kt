@@ -847,10 +847,10 @@ class MainActivity : AppCompatActivity() {
             }
 
             val leftItems = listOf(
-                Triple(R.drawable.ic_vec_import, "Excel Import", "#6366F1") { showImportBottomSheet() },
-                Triple(R.drawable.ic_vec_export, "Excel Eksport", "#6366F1") { showExportBottomSheet() },
-                Triple(R.drawable.ic_vec_user_add, if (isSup) "Ta'minotchi +" else "Qarzdor +", "#6366F1") { showAddClientBottomSheet(isSup) },
-                Triple(R.drawable.ic_vec_flash, "Tezkor tranzaksiya", "#F97316") { showQuickTransactionBottomSheet(isSup) }
+                Triple(R.drawable.ic_vec_import, "Excel Import", "#6366F1"),
+                Triple(R.drawable.ic_vec_export, "Excel Eksport", "#6366F1"),
+                Triple(R.drawable.ic_vec_user_add, if (isSup) "Ta'minotchi +" else "Qarzdor +", "#6366F1"),
+                Triple(R.drawable.ic_vec_flash, "Tezkor tranzaksiya", "#F97316")
             )
 
             leftItems.forEach { (iconRes, labelText, hex) ->
