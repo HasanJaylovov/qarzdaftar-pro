@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 111
-        versionName "11.1-AutoKirimStat"
+        versionCode 113
+        versionName "11.3-LoginFix"
     }
 
     buildTypes {
