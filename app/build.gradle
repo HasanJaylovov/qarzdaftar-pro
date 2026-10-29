@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 151
-        versionName "15.1-FullSmsOnPayAndDelete"
+        versionCode 160
+        versionName "16.0-TemplatePastelUI"
     }
 
     buildTypes {

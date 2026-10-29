@@ -2013,33 +2013,127 @@ class MainActivity : AppCompatActivity() {
         header.addView(qrBtn)
         col.addView(header)
 
-        val banner = LinearLayout(this).apply {
+        val activeDebtorsCount = db.getPersons(false).count { it.balUzs < 0 }
+        val totalClientDebtSum = db.getPersons(false).filter { it.balUzs < 0 }.sumOf { Math.abs(it.balUzs) }
+        val totalRepaidKirimSum = db.getTransactions(false).filter { it.kind == "Kirim" }.sumOf { Math.abs(it.amount) }
+
+        val greetingBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 14 }
+        }
+        greetingBox.addView(TextView(this).apply {
+            text = "Bugungi hisob-kitoblarni"
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 18f
+            setTypeface(null, Typeface.BOLD)
+        })
+        val greetRow2 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = glossyPurpleGrad(44f)
-            elevation = 12f
-            setPadding(24, 18, 24, 18)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 20 }
-            setOnClickListener { showSubscriptionTariffsBottomSheet() }
         }
-        banner.addView(TextView(this).apply {
-            text = "🎁"
-            textSize = 25f
-            setPadding(0, 0, 22, 0)
-        })
-        banner.addView(TextView(this).apply {
-            text = "Obuna: ${remainingDaysText()}\nAvto-Save: Download/QarzFy • Muddat Avto-SMS faol"
+        greetRow2.addView(TextView(this).apply {
+            text = "$activeDebtorsCount qarzdor"
             setTextColor(Color.WHITE)
-            textSize = 12f
+            textSize = 13.5f
             setTypeface(null, Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            background = GradientDrawable().apply {
+                cornerRadius = 18f
+                setColor(Color.parseColor("#1D63FF"))
+            }
+            setPadding(20, 6, 20, 6)
         })
-        banner.addView(TextView(this).apply {
-            text = "❯"
+        greetRow2.addView(TextView(this).apply {
+            text = "  boshqaramiz! 👋"
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 17.5f
+            setTypeface(null, Typeface.BOLD)
+        })
+        greetingBox.addView(greetRow2)
+        col.addView(greetingBox)
+
+        val heroWhiteCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = glossyCard("#FFFFFF", "#E2E8F0", 34f)
+            elevation = 8f
+            setPadding(26, 22, 26, 22)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 16 }
+        }
+        heroWhiteCard.addView(TextView(this).apply {
+            text = "🏪 Tezkor qarz va to'lovlar nazorati 🚩"
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 14.5f
+            setTypeface(null, Typeface.BOLD)
+        })
+        heroWhiteCard.addView(TextView(this).apply {
+            text = "📍 $storeAddress  •  🕒 Obuna: ${remainingDaysText()}"
+            setTextColor(Color.parseColor("#64748B"))
+            textSize = 11.5f
+            setPadding(0, 6, 0, 14)
+        })
+        heroWhiteCard.addView(Button(this).apply {
+            text = "❯   + Tezkor qarz / to'lov yozish (Kalendar)"
             setTextColor(Color.WHITE)
-            textSize = 15.5f
+            textSize = 12.5f
+            setTypeface(null, Typeface.BOLD)
+            background = GradientDrawable().apply {
+                cornerRadius = 50f
+                setColor(Color.parseColor("#1D63FF"))
+            }
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 90)
+            setOnClickListener { showAddClientBottomSheet(currentHomeSubTab == 1) }
         })
-        col.addView(banner)
+        col.addView(heroWhiteCard)
+
+        fun pastelCategoryRow(bgHex: String, iconBgHex: String, emoji: String, title: String, badge: String, sub: String, onClick: () -> Unit): View {
+            return LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = GradientDrawable().apply {
+                    cornerRadius = 26f
+                    setColor(Color.parseColor(bgHex))
+                }
+                setPadding(20, 16, 20, 16)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 10 }
+                setOnClickListener { onClick() }
+                addView(TextView(this@MainActivity).apply {
+                    text = emoji
+                    gravity = Gravity.CENTER
+                    textSize = 14f
+                    setTextColor(Color.WHITE)
+                    background = GradientDrawable().apply {
+                        cornerRadius = 20f
+                        setColor(Color.parseColor(iconBgHex))
+                    }
+                    layoutParams = LinearLayout.LayoutParams(72, 72).apply { rightMargin = 18 }
+                })
+                val txtCol = LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+                txtCol.addView(TextView(this@MainActivity).apply {
+                    text = "$title   $badge"
+                    setTextColor(Color.parseColor("#0F172A"))
+                    textSize = 13f
+                    setTypeface(null, Typeface.BOLD)
+                })
+                txtCol.addView(TextView(this@MainActivity).apply {
+                    text = sub
+                    setTextColor(Color.parseColor("#475569"))
+                    textSize = 11.5f
+                })
+                addView(txtCol)
+            }
+        }
+
+        col.addView(pastelCategoryRow("#FCE8E8", "#E11D48", "📥", "Qarzdor mijozlar", "+$activeDebtorsCount", "Jami qarz: ${formatMoney(totalClientDebtSum, "UZS")}") {
+            currentSortMode = "Summa"; renderMainWorkspace()
+        })
+        col.addView(pastelCategoryRow("#EFE7FF", "#7C3AED", "✨", "AI Avto-SMS va Ovozli Bot", "Faol", "Qarz yozilganda va yopilganda fonda SMS boradi") {
+            showVoiceSettingsDialog()
+        })
+        col.addView(pastelCategoryRow("#E3F9E5", "#16A34A", "✓", "Yopilgan / Kirim balansi", "+${formatMoney(totalRepaidKirimSum, "UZS")}", "Qaytarilgan qarzlar avtomatik Kirimga tushadi") {
+            currentBottomTab = 3; renderMainWorkspace()
+        })
 
         val tabsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
