@@ -1949,7 +1949,7 @@ class MainActivity : AppCompatActivity() {
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(20, 18, 20, 130)
+            setPadding(16, 12, 16, 112)
         }
 
         val header = LinearLayout(this).apply {
@@ -1964,7 +1964,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             background = glossyCard("#FFFFFF", "#FFFFFF", 30f)
             elevation = 6f
-            layoutParams = LinearLayout.LayoutParams(82, 82).apply { rightMargin = 14 }
+            layoutParams = LinearLayout.LayoutParams(44, 44).apply { rightMargin = 14 }
             setOnClickListener {
                 isLeftEdgeOpen = !isLeftEdgeOpen
                 isRightEdgeOpen = false
@@ -1973,7 +1973,7 @@ class MainActivity : AppCompatActivity() {
         }
         val logoImg = ImageView(this).apply {
             setImageResource(R.drawable.ic_qarzdaftar_logo)
-            layoutParams = LinearLayout.LayoutParams(90, 90).apply { rightMargin = 12 }
+            layoutParams = LinearLayout.LayoutParams(46, 46).apply { rightMargin = 12 }
         }
         val storeTitle = TextView(this).apply {
             text = "🇺🇿 $storeName ❯"
@@ -1986,7 +1986,7 @@ class MainActivity : AppCompatActivity() {
         val chatHeaderBtn = FrameLayout(this).apply {
             background = glossyPurpleGrad(28f)
             elevation = 6f
-            layoutParams = LinearLayout.LayoutParams(82, 82).apply { rightMargin = 10 }
+            layoutParams = LinearLayout.LayoutParams(44, 44).apply { rightMargin = 10 }
             addView(TextView(this@MainActivity).apply {
                 text = "💬"
                 gravity = Gravity.CENTER
@@ -1997,7 +1997,7 @@ class MainActivity : AppCompatActivity() {
         val qrBtn = FrameLayout(this).apply {
             background = glossyCard("#FFFFFF", "#FFFFFF", 28f)
             elevation = 6f
-            layoutParams = LinearLayout.LayoutParams(82, 82)
+            layoutParams = LinearLayout.LayoutParams(44, 44)
             addView(TextView(this@MainActivity).apply {
                 text = "🔳"
                 gravity = Gravity.CENTER
@@ -2038,7 +2038,7 @@ class MainActivity : AppCompatActivity() {
             setTypeface(null, Typeface.BOLD)
             background = GradientDrawable().apply {
                 cornerRadius = 18f
-                setColor(Color.parseColor("#1D63FF"))
+                setColor(Color.parseColor("#3677F5"))
             }
             setPadding(20, 6, 20, 6)
         })
@@ -2077,9 +2077,9 @@ class MainActivity : AppCompatActivity() {
             setTypeface(null, Typeface.BOLD)
             background = GradientDrawable().apply {
                 cornerRadius = 50f
-                setColor(Color.parseColor("#1D63FF"))
+                setColor(Color.parseColor("#3677F5"))
             }
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 90)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 54)
             setOnClickListener { showAddClientBottomSheet(currentHomeSubTab == 1) }
         })
         col.addView(heroWhiteCard)
@@ -2104,7 +2104,7 @@ class MainActivity : AppCompatActivity() {
                         cornerRadius = 20f
                         setColor(Color.parseColor(iconBgHex))
                     }
-                    layoutParams = LinearLayout.LayoutParams(72, 72).apply { rightMargin = 18 }
+                    layoutParams = LinearLayout.LayoutParams(48, 48).apply { rightMargin = 12 }
                 })
                 val txtCol = LinearLayout(this@MainActivity).apply {
                     orientation = LinearLayout.VERTICAL
@@ -2149,7 +2149,7 @@ class MainActivity : AppCompatActivity() {
                 setTextColor(if (sel) Color.WHITE else Color.parseColor("#94A3B8"))
                 background = if (sel) glossyPurpleGrad(30f) else glossyCard("#FFFFFF", "#E2E8F0", 30f)
                 elevation = if (sel) 8f else 2f
-                setPadding(16, 22, 16, 22)
+                setPadding(12, 12, 12, 12)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                     if (i < 2) rightMargin = 12
                 }
@@ -2179,7 +2179,7 @@ class MainActivity : AppCompatActivity() {
             textSize = 12.5f
             setTypeface(null, Typeface.BOLD)
             background = glossyPurpleGrad(30f)
-            layoutParams = LinearLayout.LayoutParams(0, 92, 1f).apply { rightMargin = 8 }
+            layoutParams = LinearLayout.LayoutParams(0, 54, 1f).apply { rightMargin = 8 }
             setOnClickListener { showAddClientBottomSheet(isSup) }
         })
         directActionsRow.addView(Button(this).apply {
@@ -2188,13 +2188,13 @@ class MainActivity : AppCompatActivity() {
             textSize = 12.5f
             setTypeface(null, Typeface.BOLD)
             background = glossyOrangeGrad(30f)
-            layoutParams = LinearLayout.LayoutParams(0, 92, 1f).apply { leftMargin = 8 }
+            layoutParams = LinearLayout.LayoutParams(0, 54, 1f).apply { leftMargin = 8 }
             setOnClickListener { showQuickTransactionBottomSheet(isSup) }
         })
         col.addView(directActionsRow)
 
         val tvCountLabel = TextView(this).apply {
-            setTextColor(Color.parseColor("#5B4CFF"))
+            setTextColor(Color.parseColor("#5946E8"))
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
             setPadding(16, 10, 28, 10)
@@ -2212,7 +2212,7 @@ class MainActivity : AppCompatActivity() {
             textSize = 15.5f
             setTextColor(Color.parseColor("#94A3B8"))
             background = glossyCard("#FFFFFF", "#CBD5E1", 24f)
-            layoutParams = LinearLayout.LayoutParams(78, 78)
+            layoutParams = LinearLayout.LayoutParams(42, 42)
             setOnClickListener { openCreateFolderDialog() }
         })
         col.addView(folderBar)
@@ -2234,7 +2234,7 @@ class MainActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER
                 textSize = 12f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(if (act) Color.parseColor("#5B4CFF") else Color.parseColor("#1E293B"))
+                setTextColor(if (act) Color.parseColor("#5946E8") else Color.parseColor("#1E293B"))
                 background = glossyCard(if (act) "#E0E7FF" else "#FFFFFF", "#CBD5E1", 24f)
                 setPadding(22, 16, 22, 16)
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { rightMargin = 10 }
@@ -2291,7 +2291,7 @@ class MainActivity : AppCompatActivity() {
                         gravity = Gravity.CENTER_VERTICAL
                         background = glossyCard("#FFFFFF", "#FFFFFF", 36f)
                         elevation = 6f
-                        setPadding(18, 14, 20, 14)
+                        setPadding(12, 10, 12, 10)
                         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 14 }
                         // ISM-FAMILIYASI BOSILGANDA TO'LIQ QARZLAR VA O'CHIRILGAN QARZLAR TARIXI OCHILADI!
                         setOnClickListener { showPersonFullHistoryAndActionSheet(p, isSup) }
@@ -2305,7 +2305,7 @@ class MainActivity : AppCompatActivity() {
                         textSize = 15.5f
                         setTypeface(null, Typeface.BOLD)
                         background = circleAvatarBg(firstChar)
-                        layoutParams = LinearLayout.LayoutParams(86, 86).apply { rightMargin = 26 }
+                        layoutParams = LinearLayout.LayoutParams(44, 44).apply { rightMargin = 12 }
                     }
 
                     val midCol = LinearLayout(this).apply {
@@ -2337,7 +2337,7 @@ class MainActivity : AppCompatActivity() {
                     val isDue = isDateDueOrOverdue(p.dueDate)
                     rightCol.addView(TextView(this).apply {
                         text = if (p.dueDate.isBlank()) "Muddat yo'q" else "⏳ ${p.dueDate}"
-                        setTextColor(if (isDue && p.balUzs != 0L) Color.parseColor("#DC2626") else Color.parseColor("#6366F1"))
+                        setTextColor(if (isDue && p.balUzs != 0L) Color.parseColor("#DC2626") else Color.parseColor("#6C4CF1"))
                         textSize = 11.5f
                         setTypeface(null, if (isDue) Typeface.BOLD else Typeface.NORMAL)
                     })
@@ -3064,9 +3064,9 @@ class MainActivity : AppCompatActivity() {
     private fun buildBottomNavBar(): View {
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            background = glossyCard("#FFFFFF", "#E5E7F0", 28f)
+            background = glossyCard("#FFFFFF", "#E1E7F5", 24f)
             elevation = 12f
-            setPadding(8, 10, 8, 10)
+            setPadding(6, 5, 6, 5)
             gravity = Gravity.CENTER
         }
 
@@ -3085,11 +3085,11 @@ class MainActivity : AppCompatActivity() {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
                 background = if (active) {
-                    glossyPurpleGrad(22f)
+                    glossyPurpleGrad(18f)
                 } else {
                     null
                 }
-                setPadding(2, 10, 2, 10)
+                setPadding(2, 7, 2, 7)
                 layoutParams = LinearLayout.LayoutParams(
                     0,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -3114,10 +3114,10 @@ class MainActivity : AppCompatActivity() {
             tab.addView(TextView(this).apply {
                 text = parts[0]
                 gravity = Gravity.CENTER
-                textSize = 19f
+                textSize = 18f
                 setTextColor(
                     if (active) Color.WHITE
-                    else Color.parseColor("#64748B")
+                    else Color.parseColor("#7180A0")
                 )
             })
 
@@ -3132,7 +3132,7 @@ class MainActivity : AppCompatActivity() {
                 )
                 setTextColor(
                     if (active) Color.WHITE
-                    else Color.parseColor("#64748B")
+                    else Color.parseColor("#7180A0")
                 )
             })
 
