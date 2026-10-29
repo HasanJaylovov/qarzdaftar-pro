@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 140
-        versionName "14.0-CyberNeon"
+        versionCode 150
+        versionName "15.0-SleekCleanUI"
     }
 
     buildTypes {
