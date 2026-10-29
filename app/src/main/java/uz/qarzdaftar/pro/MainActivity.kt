@@ -824,7 +824,7 @@ class MainActivity : AppCompatActivity() {
     private fun glossyPurpleGrad(rad: Float = 26f): GradientDrawable {
         return GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            intArrayOf(Color.parseColor("#635BFF"), Color.parseColor("#4F46E5"), Color.parseColor("#2563EB"))
+            intArrayOf(Color.parseColor("#5946E8"), Color.parseColor("#6C4CF1"), Color.parseColor("#3677F5"))
         ).apply {
             cornerRadius = rad
         }
@@ -1240,7 +1240,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderSubscriptionLockScreen() {
         rootLayout.removeAllViews()
-        rootLayout.setBackgroundColor(Color.parseColor("#F6F8FC"))
+        rootLayout.setBackgroundColor(Color.parseColor("#F5F7FF"))
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1274,7 +1274,7 @@ class MainActivity : AppCompatActivity() {
         card.addView(tariffButton("💳 1 Oy — ${formatMoney(price1Month, "so'm")}", "Botga chek (skrinshot) yuborish", "#6D28D9") {
             selectTariffAndPayDialog(1, price1Month)
         })
-        card.addView(tariffButton("🔥 3 Oy — ${formatMoney(price3Month, "so'm")}", "Botga chek (skrinshot) yuborish", "#2563EB") {
+        card.addView(tariffButton("🔥 3 Oy — ${formatMoney(price3Month, "so'm")}", "Botga chek (skrinshot) yuborish", "#3677F5") {
             selectTariffAndPayDialog(3, price3Month)
         })
         card.addView(tariffButton("👑 6 Oy — ${formatMoney(price6Month, "so'm")}", "Botga chek (skrinshot) yuborish", "#059669") {
@@ -1336,7 +1336,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderOnboardingAndLogin() {
         rootLayout.removeAllViews()
-        rootLayout.setBackgroundColor(Color.parseColor("#F6F8FC"))
+        rootLayout.setBackgroundColor(Color.parseColor("#F5F7FF"))
 
         val scroll = ScrollView(this).apply {
             isFillViewport = true
@@ -1713,7 +1713,7 @@ class MainActivity : AppCompatActivity() {
     // ==================== 2. ASOSIY WORKSPACE VA CHAP/O'NG YARIM KO'RINUVCHI SLIDE TUGMALAR ====================
     private fun renderMainWorkspace() {
         rootLayout.removeAllViews()
-        rootLayout.setBackgroundColor(Color.parseColor("#F6F8FC"))
+        rootLayout.setBackgroundColor(Color.parseColor("#F5F7FF"))
 
         val mainFrame = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
@@ -3064,31 +3064,81 @@ class MainActivity : AppCompatActivity() {
     private fun buildBottomNavBar(): View {
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            background = glossyCard("#FFFFFF", "#E2E8F0", 0f)
-            elevation = 24f
-            setPadding(12, 16, 12, 16)
+            background = glossyCard("#FFFFFF", "#E5E7F0", 28f)
+            elevation = 12f
+            setPadding(8, 10, 8, 10)
             gravity = Gravity.CENTER
         }
-        val tabs = listOf("🏠\nAsosiy", "💵\nKassa", "📦\nMahsulot", "📊\nStatistika", "👤\nProfil")
+
+        val tabs = listOf(
+            "🏠\nAsosiy",
+            "💵\nKassa",
+            "📦\nMahsulot",
+            "📊\nStatistika",
+            "👤\nProfil"
+        )
+
         tabs.forEachIndexed { idx, title ->
-            val active = (currentBottomTab == idx)
-            bar.addView(TextView(this).apply {
-                text = title
+            val active = currentBottomTab == idx
+
+            val tab = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                textSize = 11.5f
-                setTypeface(null, if (active) Typeface.BOLD else Typeface.NORMAL)
-                setTextColor(if (active) Color.parseColor("#5B4CFF") else Color.parseColor("#64748B"))
-                background = if (active) glossyCard("#EEF2FF", "#C7D2FE", 28f) else null
-                setPadding(8, 14, 8, 14)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(4, 0, 4, 0) }
+                background = if (active) {
+                    glossyPurpleGrad(22f)
+                } else {
+                    null
+                }
+                setPadding(2, 10, 2, 10)
+                layoutParams = LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f
+                ).apply {
+                    setMargins(3, 0, 3, 0)
+                }
+
+                isClickable = true
+                isFocusable = true
+
                 setOnClickListener {
                     currentBottomTab = idx
                     isLeftEdgeOpen = false
                     isRightEdgeOpen = false
                     renderMainWorkspace()
                 }
+            }
+
+            val parts = title.split("\n")
+
+            tab.addView(TextView(this).apply {
+                text = parts[0]
+                gravity = Gravity.CENTER
+                textSize = 19f
+                setTextColor(
+                    if (active) Color.WHITE
+                    else Color.parseColor("#64748B")
+                )
             })
+
+            tab.addView(TextView(this).apply {
+                text = parts.getOrElse(1) { "" }
+                gravity = Gravity.CENTER
+                textSize = 10f
+                setPadding(0, 3, 0, 0)
+                setTypeface(
+                    null,
+                    if (active) Typeface.BOLD else Typeface.NORMAL
+                )
+                setTextColor(
+                    if (active) Color.WHITE
+                    else Color.parseColor("#64748B")
+                )
+            })
+
+            bar.addView(tab)
         }
+
         return bar
     }
 
@@ -3695,7 +3745,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 0, 0, 18)
         })
         wrap.addView(tariffButton("💳 1 Oy — ${formatMoney(price1Month, "so'm")}", "Botga to'lov cheki (skrinshot) yuborish", "#6D28D9") { sheet.dismiss(); selectTariffAndPayDialog(1, price1Month) })
-        wrap.addView(tariffButton("🔥 3 Oy — ${formatMoney(price3Month, "so'm")}", "Botga to'lov cheki (skrinshot) yuborish", "#2563EB") { sheet.dismiss(); selectTariffAndPayDialog(3, price3Month) })
+        wrap.addView(tariffButton("🔥 3 Oy — ${formatMoney(price3Month, "so'm")}", "Botga to'lov cheki (skrinshot) yuborish", "#3677F5") { sheet.dismiss(); selectTariffAndPayDialog(3, price3Month) })
         wrap.addView(tariffButton("👑 6 Oy — ${formatMoney(price6Month, "so'm")}", "Botga to'lov cheki (skrinshot) yuborish", "#059669") { sheet.dismiss(); selectTariffAndPayDialog(6, price6Month) })
         sheet.setContentView(wrap)
         sheet.show()
@@ -4044,7 +4094,7 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {}
 
         rootLayout.removeAllViews()
-        rootLayout.setBackgroundColor(Color.parseColor("#F6F8FC"))
+        rootLayout.setBackgroundColor(Color.parseColor("#F5F7FF"))
 
         var currentStep = mode
         if (mode == "SETUP_NEW") currentStep = "SETUP_FIRST"
