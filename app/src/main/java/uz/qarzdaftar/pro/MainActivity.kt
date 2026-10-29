@@ -303,9 +303,9 @@ class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_m
             val oldDue = c.getString(3) ?: ""
             val newDue = if (dueDate.isNotBlank()) dueDate else oldDue
             if (currency == "USD") {
-                db.execSQL("UPDATE clients SET bal_usd = ?, due_date = ? WHERE id = ?", arrayOf<Any>(curUsd + delta, newDue, id))
+                db.execSQL("UPDATE clients SET bal_usd = ?, due_date = ?, phone = CASE WHEN ? != '' THEN ? ELSE phone END WHERE id = ?", arrayOf<Any>(curUsd + delta, newDue, phone.trim(), phone.trim(), id))
             } else {
-                db.execSQL("UPDATE clients SET bal_uzs = ?, due_date = ? WHERE id = ?", arrayOf<Any>(curUzs + delta, newDue, id))
+                db.execSQL("UPDATE clients SET bal_uzs = ?, due_date = ?, phone = CASE WHEN ? != '' THEN ? ELSE phone END WHERE id = ?", arrayOf<Any>(curUzs + delta, newDue, phone.trim(), phone.trim(), id))
             }
         } else {
             val initUsd = if (currency == "USD") delta.toDouble() else 0.0
@@ -885,18 +885,56 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ==================== FONDA KO'RINMAS AVTO-QO'NG'IROQ VA SIM AVTO-SMS ====================
+    private fun normalizeUzPhone(raw: String): String {
+        val digits = raw.filter { it.isDigit() }
+        return when {
+            digits.length == 9 -> "+998$digits"
+            digits.length == 12 && digits.startsWith("998") -> "+$digits"
+            raw.trim().startsWith("+") && digits.length >= 9 -> "+$digits"
+            digits.length >= 9 -> "+$digits"
+            else -> ""
+        }
+    }
+
     private fun triggerBackgroundSmsAndVoiceCall(clientName: String, phoneNumber: String, amount: Long, kind: String, note: String, dueDate: String = "", isSupplier: Boolean = false) {
-        val fmtAmt = formatMoney(amount, "so'm")
-        val duePart = if (dueDate.isNotBlank()) " Muddat: $dueDate." else ""
-        val smsText = if (isSupplier) {
-            "Hurmatli hamkor ($clientName), $storeName do'konida $fmtAmt ($kind) qayd etildi ($note).$duePart"
-        } else if (kind == "Chiqim") {
-            "Hurmatli $clientName, $storeName do'konida sizga $fmtAmt qarz yozildi ($note).$duePart"
-        } else {
-            "Hurmatli $clientName, $storeName do'konidagi qarzingizdan $fmtAmt to'lov qabul qilindi. Rahmat!"
+        var cleanPhone = normalizeUzPhone(phoneNumber)
+        if (cleanPhone.isEmpty()) {
+            val found = db.getPersonByName(clientName, isSupplier)
+            if (found != null) {
+                cleanPhone = normalizeUzPhone(found.phone)
+            }
         }
 
-        sendAutoSms(phoneNumber, smsText)
+        val fmtAmt = formatMoney(Math.abs(amount), "so'm")
+        val duePart = if (dueDate.isNotBlank() && dueDate != "Bugun") " Muddat: $dueDate." else ""
+
+        val smsText = when {
+            kind == "Yopildi" -> {
+                if (isSupplier) {
+                    "Hurmatli hamkor ($clientName), $storeName do'koni bilan $fmtAmt hisob-kitob to'liq yopildi ($note)."
+                } else {
+                    "Hurmatli $clientName, $storeName do'konidagi $fmtAmt qarzingiz to'liq yopildi (o'chirildi). Rahmat!"
+                }
+            }
+            kind == "Kirim" -> {
+                if (isSupplier) {
+                    "Hurmatli hamkor ($clientName), $storeName do'konida $fmtAmt kirim/to'lov qayd etildi ($note)."
+                } else {
+                    "Hurmatli $clientName, $storeName do'konidagi qarzingizdan $fmtAmt to'lov qabul qilindi. Rahmat!"
+                }
+            }
+            else -> {
+                if (isSupplier) {
+                    "Hurmatli hamkor ($clientName), $storeName do'konida $fmtAmt qarz/chiqim qayd etildi ($note).$duePart"
+                } else {
+                    "Hurmatli $clientName, $storeName do'konida sizga $fmtAmt qarz yozildi ($note).$duePart"
+                }
+            }
+        }
+
+        if (cleanPhone.isNotEmpty()) {
+            sendAutoSms(cleanPhone, smsText)
+        }
 
         if (isAutoVoiceCallEnabled) {
             CoroutineScope(Dispatchers.IO).launch {
@@ -910,7 +948,7 @@ class MainActivity : AppCompatActivity() {
                         put("store_id", storeId)
                         put("store_name", storeName)
                         put("client_name", clientName)
-                        put("client_phone", phoneNumber)
+                        put("client_phone", cleanPhone)
                         put("amount", fmtAmt)
                         put("kind", kind)
                         put("note", note)
@@ -925,12 +963,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun sendAutoSms(phoneNumber: String, message: String) {
-        if (phoneNumber.length < 9) return
+        val targetPhone = normalizeUzPhone(phoneNumber)
+        if (targetPhone.length < 9) return
         try {
-            val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) getSystemService(SmsManager::class.java)
-            else @Suppress("DEPRECATION") SmsManager.getDefault()
-            smsManager.sendMultipartTextMessage(phoneNumber, null, smsManager.divideMessage(message), null, null)
-        } catch (_: Exception) {}
+            val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                getSystemService(SmsManager::class.java) ?: SmsManager.getDefault()
+            } else {
+                @Suppress("DEPRECATION")
+                SmsManager.getDefault()
+            }
+            val parts = smsManager.divideMessage(message)
+            if (parts.size > 1) {
+                smsManager.sendMultipartTextMessage(targetPhone, null, parts, null, null)
+            } else {
+                smsManager.sendTextMessage(targetPhone, null, message, null, null)
+            }
+        } catch (_: Exception) {
+            try {
+                @Suppress("DEPRECATION")
+                val fallbackSms = SmsManager.getDefault()
+                fallbackSms.sendTextMessage(targetPhone, null, message, null, null)
+            } catch (_: Exception) {}
+        }
     }
 
     // ==================== OBUNA TEKSHIRISH ====================
@@ -2353,7 +2407,17 @@ class MainActivity : AppCompatActivity() {
                         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 98)
                         setOnClickListener {
                             db.markTransactionDeletedAndRevertBalance(tx)
-                            Toast.makeText(this@MainActivity, "✅ Qarz o'chirildi va sana/vaqti bilan tarixda saqlandi!", Toast.LENGTH_SHORT).show()
+                            val targetPh = if (tx.personPhone.isNotBlank()) tx.personPhone else client.phone
+                            triggerBackgroundSmsAndVoiceCall(
+                                client.name,
+                                targetPh,
+                                tx.amount,
+                                "Yopildi",
+                                tx.note.ifEmpty { "Qarz yopildi" },
+                                tx.dueDate,
+                                isSupplier
+                            )
+                            Toast.makeText(this@MainActivity, "✅ Qarz yopildi va xaridorga SMS yuborildi!", Toast.LENGTH_SHORT).show()
                             sheet.dismiss()
                             renderMainWorkspace()
                             val updatedPerson = db.getPersonByName(client.name, isSupplier)
