@@ -680,7 +680,7 @@ class MainActivity : AppCompatActivity() {
         adminCardOwner = prefs.getString("card_owner", "HASAN JAYLOVOV") ?: "HASAN JAYLOVOV"
     }
 
-    private fun  {
+    private fun restoreFromPermanentDownloadsBackupIfEmpty() {
         if (db.getPersons(false).isNotEmpty()) return
         try {
             val pubDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "QarzFy")
