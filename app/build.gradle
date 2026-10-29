@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 130
-        versionName "13.0-PinAndBiometric"
+        versionCode 140
+        versionName "14.0-CyberNeon"
     }
 
     buildTypes {

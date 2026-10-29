@@ -537,6 +537,8 @@ class MainActivity : AppCompatActivity() {
     private var appPinCode = ""
     private var isBiometricEnabled = true
     private var isPinUnlockedThisSession = false
+    private var autoLockTimeoutMs = 60_000L
+    private var lastInteractionTimeMs = System.currentTimeMillis()
 
     private var price1Month = 49000L
     private var price3Month = 135000L
@@ -615,9 +617,37 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        lastInteractionTimeMs = System.currentTimeMillis()
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
+        val now = System.currentTimeMillis()
+        if (isLoggedIn && appPinCode.length == 6 && isPinUnlockedThisSession) {
+            if (now - lastInteractionTimeMs > autoLockTimeoutMs) {
+                isPinUnlockedThisSession = false
+                lastInteractionTimeMs = now
+                renderPinLockScreen(mode = "UNLOCK")
+                return true
+            }
+        }
+        lastInteractionTimeMs = now
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun onResume() {
         super.onResume()
-        if (isLoggedIn && userPhone.isNotBlank() && appPinCode.length == 6 && isPinUnlockedThisSession) {
+        val now = System.currentTimeMillis()
+        if (isLoggedIn && userPhone.isNotBlank() && appPinCode.length == 6) {
+            if (isPinUnlockedThisSession && (now - lastInteractionTimeMs > autoLockTimeoutMs)) {
+                isPinUnlockedThisSession = false
+            }
+            if (!isPinUnlockedThisSession) {
+                renderPinLockScreen(mode = "UNLOCK")
+                return
+            }
+            lastInteractionTimeMs = now
             checkServerSubscriptionAndRender()
         }
     }
@@ -642,6 +672,7 @@ class MainActivity : AppCompatActivity() {
         isAutoVoiceCallEnabled = prefs.getBoolean("auto_voice_call", true)
         appPinCode = prefs.getString("app_pin_code", "") ?: ""
         isBiometricEnabled = prefs.getBoolean("biometric_enabled", true)
+        autoLockTimeoutMs = prefs.getLong("auto_lock_timeout_ms", 60_000L)
         price1Month = prefs.getLong("price_1m", 49000L)
         price3Month = prefs.getLong("price_3m", 135000L)
         price6Month = prefs.getLong("price_6m", 255000L)
@@ -676,6 +707,7 @@ class MainActivity : AppCompatActivity() {
             .putBoolean("auto_voice_call", isAutoVoiceCallEnabled)
             .putString("app_pin_code", appPinCode)
             .putBoolean("biometric_enabled", isBiometricEnabled)
+            .putLong("auto_lock_timeout_ms", autoLockTimeoutMs)
             .commit()
 
         if (userPhone.isNotBlank()) {
@@ -770,51 +802,62 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ==================== GLOSSY GLASSMORPHISM DRAWABLES ====================
-    private fun glossyCard(fillHex: String = "#F2FFFFFF", strokeHex: String = "#FFFFFF", rad: Float = 44f): GradientDrawable {
+    // ==================== CYBER-NEON DARK GLASS DRAWABLES ====================
+    private fun glossyCard(fillHex: String = "#131C31", strokeHex: String = "#233554", rad: Float = 34f): GradientDrawable {
+        val mappedFill = when (fillHex.uppercase()) {
+            "#FFFFFF", "#FFFFFFFF", "#F2FFFFFF" -> "#131C31"
+            "#F8FAFC", "#F1F5F9" -> "#0F172A"
+            "#EEF2FF", "#E0E7FF" -> "#1E1B4B"
+            else -> fillHex
+        }
+        val mappedStroke = when (strokeHex.uppercase()) {
+            "#FFFFFF", "#E2E8F0", "#CBD5E1" -> "#1E3A8A"
+            "#94A3B8" -> "#00F5D4"
+            else -> strokeHex
+        }
         return GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = rad
-            setColor(Color.parseColor(fillHex))
-            setStroke(3, Color.parseColor(strokeHex))
+            setColor(Color.parseColor(mappedFill))
+            setStroke(2, Color.parseColor(mappedStroke))
         }
     }
 
-    private fun glossyPurpleGrad(rad: Float = 46f): GradientDrawable {
+    private fun glossyPurpleGrad(rad: Float = 34f): GradientDrawable {
         return GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            intArrayOf(Color.parseColor("#7C3AED"), Color.parseColor("#6366F1"), Color.parseColor("#3B82F6"))
+            intArrayOf(Color.parseColor("#7C3AED"), Color.parseColor("#00F5D4"), Color.parseColor("#06B6D4"))
         ).apply {
             cornerRadius = rad
-            setStroke(3, Color.parseColor("#B3FFFFFF"))
+            setStroke(2, Color.parseColor("#00F5D4"))
         }
     }
 
-    private fun glossyOrangeGrad(rad: Float = 44f): GradientDrawable {
+    private fun glossyOrangeGrad(rad: Float = 34f): GradientDrawable {
         return GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            intArrayOf(Color.parseColor("#FB923C"), Color.parseColor("#F97316"), Color.parseColor("#EA580C"))
+            intArrayOf(Color.parseColor("#F43F5E"), Color.parseColor("#EC4899"), Color.parseColor("#8B5CF6"))
         ).apply {
             cornerRadius = rad
-            setStroke(3, Color.parseColor("#B3FFFFFF"))
+            setStroke(2, Color.parseColor("#F472B6"))
         }
     }
 
-    private fun glossyRedGrad(rad: Float = 38f): GradientDrawable {
+    private fun glossyRedGrad(rad: Float = 32f): GradientDrawable {
         return GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            intArrayOf(Color.parseColor("#EF4444"), Color.parseColor("#DC2626"))
+            intArrayOf(Color.parseColor("#EF4444"), Color.parseColor("#B91C1C"))
         ).apply {
             cornerRadius = rad
-            setStroke(3, Color.parseColor("#B3FFFFFF"))
+            setStroke(2, Color.parseColor("#FCA5A5"))
         }
     }
 
-    private fun glossyRoundBtnBg(hex: String, strokeHex: String = "#CCFFFFFF"): GradientDrawable {
+    private fun glossyRoundBtnBg(hex: String, strokeHex: String = "#00F5D4"): GradientDrawable {
         return GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(Color.parseColor(hex))
-            setStroke(4, Color.parseColor(strokeHex))
+            setStroke(3, Color.parseColor(strokeHex))
         }
     }
 
@@ -1008,7 +1051,7 @@ class MainActivity : AppCompatActivity() {
         }
         topBar.addView(TextView(this).apply {
             text = "💬 Admin bilan suhbat (Hasan Jaylovov)"
-            setTextColor(Color.parseColor("#0F172A"))
+            setTextColor(Color.parseColor("#F8FAFC"))
             textSize = 17f
             setTypeface(null, Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -1054,7 +1097,7 @@ class MainActivity : AppCompatActivity() {
                         if (list.isEmpty()) {
                             msgContainer.addView(TextView(this@MainActivity).apply {
                                 text = "👋 Assalomu alaykum! Savolingiz bo'lsa pastga yozib yuboring."
-                                setTextColor(Color.parseColor("#475569"))
+                                setTextColor(Color.parseColor("#94A3B8"))
                                 textSize = 13f
                             })
                         } else {
@@ -1071,7 +1114,7 @@ class MainActivity : AppCompatActivity() {
                                 }
                                 bubble.addView(TextView(this@MainActivity).apply {
                                     text = if (isUser) "Siz: ${m.message}" else "👑 Admin: ${m.message}"
-                                    setTextColor(if (isUser) Color.WHITE else Color.parseColor("#0F172A"))
+                                    setTextColor(if (isUser) Color.WHITE else Color.parseColor("#F8FAFC"))
                                     textSize = 13.5f
                                 })
                                 bubble.addView(TextView(this@MainActivity).apply {
@@ -1097,7 +1140,7 @@ class MainActivity : AppCompatActivity() {
         }
         val etMsg = EditText(this).apply {
             hint = "Xabar yozing..."
-            setTextColor(Color.parseColor("#0F172A"))
+            setTextColor(Color.parseColor("#F8FAFC"))
             background = glossyCard("#F8FAFC", "#CBD5E1", 30f)
             setPadding(30, 22, 30, 22)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = 12 }
@@ -1147,7 +1190,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderSubscriptionLockScreen() {
         rootLayout.removeAllViews()
-        rootLayout.setBackgroundColor(Color.parseColor("#EEF2FF"))
+        rootLayout.setBackgroundColor(Color.parseColor("#070B19"))
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1172,7 +1215,7 @@ class MainActivity : AppCompatActivity() {
         })
         card.addView(TextView(this).apply {
             text = "Do'kon ID: $storeId ($storeName)\n💳 Karta: $adminCardNumber ($adminCardOwner)\n\nTarifni tanlab, Botga to'lov cheki (skrinshot) yuboring:"
-            setTextColor(Color.parseColor("#475569"))
+            setTextColor(Color.parseColor("#94A3B8"))
             textSize = 13f
             gravity = Gravity.CENTER
             setPadding(10, 14, 10, 30)
@@ -1196,7 +1239,7 @@ class MainActivity : AppCompatActivity() {
         })
         card.addView(Button(this).apply {
             text = "🔄 To'lov tasdiqlanganini tekshirish"
-            setTextColor(Color.parseColor("#1E293B"))
+            setTextColor(Color.parseColor("#E2E8F0"))
             background = glossyCard("#F1F5F9", "#CBD5E1", 32f)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 120).apply { bottomMargin = 8 }
             setOnClickListener { checkServerSubscriptionAndRender() }
@@ -1243,7 +1286,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderOnboardingAndLogin() {
         rootLayout.removeAllViews()
-        rootLayout.setBackgroundColor(Color.parseColor("#EEF2FF"))
+        rootLayout.setBackgroundColor(Color.parseColor("#070B19"))
 
         val scroll = ScrollView(this).apply {
             isFillViewport = true
@@ -1312,7 +1355,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             textSize = 13.5f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(if (!isRegisterMode) Color.WHITE else Color.parseColor("#334155"))
+            setTextColor(if (!isRegisterMode) Color.WHITE else Color.parseColor("#CBD5E1"))
             background = if (!isRegisterMode) glossyPurpleGrad(28f) else null
             setPadding(16, 24, 16, 24)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -1327,7 +1370,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             textSize = 13.5f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(if (isRegisterMode) Color.WHITE else Color.parseColor("#334155"))
+            setTextColor(if (isRegisterMode) Color.WHITE else Color.parseColor("#CBD5E1"))
             background = if (isRegisterMode) glossyOrangeGrad(28f) else null
             setPadding(16, 24, 16, 24)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -1360,7 +1403,7 @@ class MainActivity : AppCompatActivity() {
 
         formCard.addView(TextView(this).apply {
             text = if (!isRegisterMode) "🔑 Mavjud hisobingizga kiring" else "➕ Yangi telefon raqam, login va parol qo'shish"
-            setTextColor(Color.parseColor("#0F172A"))
+            setTextColor(Color.parseColor("#F8FAFC"))
             textSize = 16.5f
             setTypeface(null, Typeface.BOLD)
             setPadding(4, 0, 4, 18)
@@ -1369,7 +1412,7 @@ class MainActivity : AppCompatActivity() {
         // 1. TELEFON RAQAM MAYDONI
         formCard.addView(TextView(this).apply {
             text = "📱 Telefon raqamingiz (Login) *"
-            setTextColor(Color.parseColor("#1E293B"))
+            setTextColor(Color.parseColor("#E2E8F0"))
             textSize = 13.5f
             setTypeface(null, Typeface.BOLD)
             setPadding(4, 0, 4, 8)
@@ -1377,7 +1420,7 @@ class MainActivity : AppCompatActivity() {
         val etPhone = EditText(this).apply {
             hint = "Masalan: +998909958297"
             setText(defaultPhone)
-            setTextColor(Color.parseColor("#0F172A"))
+            setTextColor(Color.parseColor("#F8FAFC"))
             setHintTextColor(Color.parseColor("#94A3B8"))
             textSize = 15.5f
             setSingleLine(true)
@@ -1394,7 +1437,7 @@ class MainActivity : AppCompatActivity() {
         // 2. PAROL MAYDONI
         formCard.addView(TextView(this).apply {
             text = "🔒 Parol *"
-            setTextColor(Color.parseColor("#1E293B"))
+            setTextColor(Color.parseColor("#E2E8F0"))
             textSize = 13.5f
             setTypeface(null, Typeface.BOLD)
             setPadding(4, 0, 4, 8)
@@ -1402,7 +1445,7 @@ class MainActivity : AppCompatActivity() {
         val etPass = EditText(this).apply {
             hint = "Parolni kiriting..."
             setText("")
-            setTextColor(Color.parseColor("#0F172A"))
+            setTextColor(Color.parseColor("#F8FAFC"))
             setHintTextColor(Color.parseColor("#94A3B8"))
             textSize = 15.5f
             setSingleLine(true)
@@ -1419,7 +1462,7 @@ class MainActivity : AppCompatActivity() {
         val etStore = EditText(this).apply {
             hint = "Do'kon yoki ismingiz (masalan: Hasan Jaylovov)"
             setText(defaultStore)
-            setTextColor(Color.parseColor("#0F172A"))
+            setTextColor(Color.parseColor("#F8FAFC"))
             setHintTextColor(Color.parseColor("#94A3B8"))
             textSize = 15f
             setSingleLine(true)
@@ -1434,7 +1477,7 @@ class MainActivity : AppCompatActivity() {
         val etAddr = EditText(this).apply {
             hint = "Manzil (masalan: O'zbekiston, Surxondaryo)"
             setText(defaultAddr)
-            setTextColor(Color.parseColor("#0F172A"))
+            setTextColor(Color.parseColor("#F8FAFC"))
             setHintTextColor(Color.parseColor("#94A3B8"))
             textSize = 15f
             setSingleLine(true)
@@ -1449,7 +1492,7 @@ class MainActivity : AppCompatActivity() {
         if (isRegisterMode) {
             formCard.addView(TextView(this).apply {
                 text = "🏪 Do'kon nomi *"
-                setTextColor(Color.parseColor("#1E293B"))
+                setTextColor(Color.parseColor("#E2E8F0"))
                 textSize = 13.5f
                 setTypeface(null, Typeface.BOLD)
                 setPadding(4, 0, 4, 8)
@@ -1458,7 +1501,7 @@ class MainActivity : AppCompatActivity() {
 
             formCard.addView(TextView(this).apply {
                 text = "📍 Manzil"
-                setTextColor(Color.parseColor("#1E293B"))
+                setTextColor(Color.parseColor("#E2E8F0"))
                 textSize = 13.5f
                 setTypeface(null, Typeface.BOLD)
                 setPadding(4, 0, 4, 8)
@@ -1526,7 +1569,7 @@ class MainActivity : AppCompatActivity() {
 
             formCard.addView(Button(this).apply {
                 text = "➕ Yangi raqam va parol qo'shish (Ro'yxatdan o'tish)"
-                setTextColor(Color.parseColor("#4F46E5"))
+                setTextColor(Color.parseColor("#00F5D4"))
                 textSize = 13f
                 setTypeface(null, Typeface.BOLD)
                 background = glossyCard("#EEF2FF", "#6366F1", 30f)
@@ -1587,7 +1630,7 @@ class MainActivity : AppCompatActivity() {
         return EditText(this).apply {
             hint = hintText
             setText(initial)
-            setTextColor(Color.parseColor("#0F172A"))
+            setTextColor(Color.parseColor("#F8FAFC"))
             setHintTextColor(Color.parseColor("#94A3B8"))
             textSize = 14f
             background = glossyCard("#F8FAFC", "#CBD5E1", 32f)
@@ -1620,7 +1663,7 @@ class MainActivity : AppCompatActivity() {
     // ==================== 2. ASOSIY WORKSPACE VA CHAP/O'NG YARIM KO'RINUVCHI SLIDE TUGMALAR ====================
     private fun renderMainWorkspace() {
         rootLayout.removeAllViews()
-        rootLayout.setBackgroundColor(Color.parseColor("#EEF2FF"))
+        rootLayout.setBackgroundColor(Color.parseColor("#070B19"))
 
         val mainFrame = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
@@ -1738,7 +1781,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 val pill = TextView(this).apply {
                     text = labelText
-                    setTextColor(Color.parseColor("#0F172A"))
+                    setTextColor(Color.parseColor("#F8FAFC"))
                     textSize = 14f
                     setTypeface(null, Typeface.BOLD)
                     background = glossyCard("#FFFFFF", "#E2E8F0", 34f)
@@ -1824,7 +1867,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 val pillLabel = TextView(this).apply {
                     text = label
-                    setTextColor(Color.parseColor("#0F172A"))
+                    setTextColor(Color.parseColor("#F8FAFC"))
                     textSize = 14f
                     setTypeface(null, Typeface.BOLD)
                     background = glossyCard("#FFFFFF", "#E2E8F0", 34f)
@@ -1867,7 +1910,7 @@ class MainActivity : AppCompatActivity() {
         val menuIcon = TextView(this).apply {
             text = "☰"
             textSize = 20f
-            setTextColor(Color.parseColor("#1E293B"))
+            setTextColor(Color.parseColor("#E2E8F0"))
             gravity = Gravity.CENTER
             background = glossyCard("#FFFFFF", "#FFFFFF", 30f)
             elevation = 6f
@@ -1884,7 +1927,7 @@ class MainActivity : AppCompatActivity() {
         }
         val storeTitle = TextView(this).apply {
             text = "🇺🇿 $storeName ❯"
-            setTextColor(Color.parseColor("#0F172A"))
+            setTextColor(Color.parseColor("#F8FAFC"))
             textSize = 16.5f
             setTypeface(null, Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -1959,7 +2002,7 @@ class MainActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER
                 textSize = 13.5f
                 setTypeface(null, if (sel) Typeface.BOLD else Typeface.NORMAL)
-                setTextColor(if (sel) Color.WHITE else Color.parseColor("#475569"))
+                setTextColor(if (sel) Color.WHITE else Color.parseColor("#94A3B8"))
                 background = if (sel) glossyPurpleGrad(30f) else glossyCard("#FFFFFF", "#E2E8F0", 30f)
                 elevation = if (sel) 8f else 2f
                 setPadding(16, 22, 16, 22)
@@ -2007,7 +2050,7 @@ class MainActivity : AppCompatActivity() {
         col.addView(directActionsRow)
 
         val tvCountLabel = TextView(this).apply {
-            setTextColor(Color.parseColor("#4F46E5"))
+            setTextColor(Color.parseColor("#00F5D4"))
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
             setPadding(16, 10, 28, 10)
@@ -2023,7 +2066,7 @@ class MainActivity : AppCompatActivity() {
             text = "+"
             gravity = Gravity.CENTER
             textSize = 18f
-            setTextColor(Color.parseColor("#475569"))
+            setTextColor(Color.parseColor("#94A3B8"))
             background = glossyCard("#FFFFFF", "#CBD5E1", 24f)
             layoutParams = LinearLayout.LayoutParams(78, 78)
             setOnClickListener { openCreateFolderDialog() }
@@ -2047,7 +2090,7 @@ class MainActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER
                 textSize = 12f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(if (act) Color.parseColor("#4F46E5") else Color.parseColor("#1E293B"))
+                setTextColor(if (act) Color.parseColor("#00F5D4") else Color.parseColor("#E2E8F0"))
                 background = glossyCard(if (act) "#E0E7FF" else "#FFFFFF", "#CBD5E1", 24f)
                 setPadding(22, 16, 22, 16)
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { rightMargin = 10 }
@@ -2127,7 +2170,7 @@ class MainActivity : AppCompatActivity() {
                     }
                     midCol.addView(TextView(this).apply {
                         text = p.name
-                        setTextColor(Color.parseColor("#0F172A"))
+                        setTextColor(Color.parseColor("#F8FAFC"))
                         textSize = 16f
                         setTypeface(null, Typeface.BOLD)
                     })
@@ -2253,7 +2296,7 @@ class MainActivity : AppCompatActivity() {
 
         wrap.addView(TextView(this).apply {
             text = "📜 Barcha Yozilgan va O'chirilgan Qarzlar Tarixi:"
-            setTextColor(Color.parseColor("#0F172A"))
+            setTextColor(Color.parseColor("#F8FAFC"))
             textSize = 15.5f
             setTypeface(null, Typeface.BOLD)
             setPadding(4, 0, 4, 14)
@@ -2300,7 +2343,7 @@ class MainActivity : AppCompatActivity() {
 
                 txCard.addView(TextView(this).apply {
                     text = "🕒 Yozilgan vaqti: ${tx.date}\n⏳ Qaytarish muddati: ${tx.dueDate.ifEmpty { "Belgilanmagan" }}\n📝 Izoh: ${tx.note.ifEmpty { "Izohsiz" }}\n📌 Holati: ${tx.status}"
-                    setTextColor(Color.parseColor("#334155"))
+                    setTextColor(Color.parseColor("#CBD5E1"))
                     textSize = 12.5f
                     setPadding(0, 8, 0, 12)
                 })
@@ -2373,7 +2416,7 @@ class MainActivity : AppCompatActivity() {
         })
         topRow.addView(TextView(this).apply {
             text = "$mainCurrency ▾"
-            setTextColor(Color.parseColor("#0F172A"))
+            setTextColor(Color.parseColor("#F8FAFC"))
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
             background = glossyCard("#FFFFFF", "#E2E8F0", 26f)
@@ -2395,7 +2438,7 @@ class MainActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER
                 textSize = 15f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(if (sel) Color.WHITE else Color.parseColor("#334155"))
+                setTextColor(if (sel) Color.WHITE else Color.parseColor("#CBD5E1"))
                 background = if (sel) glossyPurpleGrad(44f) else null
                 setPadding(20, 26, 20, 26)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -2477,7 +2520,7 @@ class MainActivity : AppCompatActivity() {
             filtered.forEach { k ->
                 col.addView(TextView(this).apply {
                     text = "${if (k.type == "Kirim") "🟢" else "🔴"} ${k.category} (${k.payType}) — ${formatMoney(k.amount, k.currency)}\n📅 ${k.date} • ${k.note}"
-                    setTextColor(Color.parseColor("#0F172A"))
+                    setTextColor(Color.parseColor("#F8FAFC"))
                     textSize = 14f
                     background = glossyCard("#FFFFFF", "#FFFFFF", 32f)
                     elevation = 4f
@@ -2509,7 +2552,7 @@ class MainActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER
                 textSize = 14f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(if (sel) Color.WHITE else Color.parseColor("#1E293B"))
+                setTextColor(if (sel) Color.WHITE else Color.parseColor("#E2E8F0"))
                 background = if (sel) glossyPurpleGrad(30f) else glossyCard("#FFFFFF", "#E2E8F0", 30f)
                 setPadding(20, 26, 20, 26)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = 8 }
@@ -2575,7 +2618,7 @@ class MainActivity : AppCompatActivity() {
                 prods.forEach { pr ->
                     prodContainer.addView(TextView(this).apply {
                         text = "📦 ${pr.name}  •  ${pr.qty} ${pr.unit}\nTan narx: ${formatMoney(pr.costPrice, pr.currency)} | Sotuv: ${formatMoney(pr.salePrice, pr.currency)} | Kod: ${pr.barcode}"
-                        setTextColor(Color.parseColor("#0F172A"))
+                        setTextColor(Color.parseColor("#F8FAFC"))
                         textSize = 14f
                         background = glossyCard("#FFFFFF", "#FFFFFF", 32f)
                         elevation = 4f
@@ -2619,7 +2662,7 @@ class MainActivity : AppCompatActivity() {
         items.forEach { (title, act) ->
             wrap.addView(TextView(this).apply {
                 text = "$title   ❯"
-                setTextColor(Color.parseColor("#0F172A"))
+                setTextColor(Color.parseColor("#F8FAFC"))
                 textSize = 15f
                 setTypeface(null, Typeface.BOLD)
                 background = glossyCard("#F8FAFC", "#E2E8F0", 30f)
@@ -2652,7 +2695,7 @@ class MainActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER
                 textSize = 12f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(if (sel) Color.WHITE else Color.parseColor("#475569"))
+                setTextColor(if (sel) Color.WHITE else Color.parseColor("#94A3B8"))
                 background = if (sel) glossyPurpleGrad(26f) else null
                 setPadding(12, 22, 12, 22)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -2707,13 +2750,13 @@ class MainActivity : AppCompatActivity() {
         }
         qarzCard.addView(TextView(this).apply {
             text = "Qarzdorlar  |  Haqdorlar  |  Hisob-kitob"
-            setTextColor(Color.parseColor("#4F46E5"))
+            setTextColor(Color.parseColor("#00F5D4"))
             textSize = 14f
             setTypeface(null, Typeface.BOLD)
         })
         qarzCard.addView(TextView(this).apply {
             text = "\n🟢 Qaytarilgan / Yopilgan kirimlar: ${formatMoney(jamiKirimTx, "UZS")}\n🔴 Qolgan jami qarz: ${formatMoney(jamiQarz, "UZS")}\n👥 Ro'yxat soni: ${persons.size} ta (${allTxs.size} ta amal)"
-            setTextColor(Color.parseColor("#0F172A"))
+            setTextColor(Color.parseColor("#F8FAFC"))
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
         })
@@ -2753,7 +2796,7 @@ class MainActivity : AppCompatActivity() {
         }
         profInfo.addView(TextView(this).apply {
             text = storeName
-            setTextColor(Color.parseColor("#0F172A"))
+            setTextColor(Color.parseColor("#F8FAFC"))
             textSize = 19f
             setTypeface(null, Typeface.BOLD)
         })
@@ -2808,15 +2851,13 @@ class MainActivity : AppCompatActivity() {
             "📤 Excel (.xlsx) Eksport — Download/QarzFy va Telegram/Bluetooth" to { showExportBottomSheet() },
             "📥 Excel (.xlsx) Fayldan Mijozlarni Import Qilish" to { showImportBottomSheet() },
             "📞 Fonda Ko'rinmas Avto-Qo'ng'iroq (Bot) sozlamasi" to { showVoiceSettingsDialog() },
-            "👑 Super-Admin Panelga Kirish (Login: admin / Parol: hasan2026)" to {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$SERVER_URL/admin")))
-            },
+
             "👨‍💻 Dastur haqida: Hasan Jaylovov (@HasanJaylovov)" to { showDeveloperDialog() }
         )
         settingsList.forEach { (title, act) ->
             col.addView(TextView(this).apply {
                 text = "$title   ❯"
-                setTextColor(Color.parseColor("#0F172A"))
+                setTextColor(Color.parseColor("#F8FAFC"))
                 textSize = 14f
                 setTypeface(null, Typeface.BOLD)
                 background = glossyCard("#FFFFFF", "#FFFFFF", 34f)
@@ -2853,7 +2894,7 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { onClick() }
             addView(TextView(this@MainActivity).apply {
                 text = title
-                setTextColor(Color.parseColor("#0F172A"))
+                setTextColor(Color.parseColor("#F8FAFC"))
                 textSize = 13.5f
                 setTypeface(null, Typeface.BOLD)
             })
@@ -2882,7 +2923,7 @@ class MainActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER
                 textSize = 11.5f
                 setTypeface(null, if (active) Typeface.BOLD else Typeface.NORMAL)
-                setTextColor(if (active) Color.parseColor("#4F46E5") else Color.parseColor("#64748B"))
+                setTextColor(if (active) Color.parseColor("#00F5D4") else Color.parseColor("#64748B"))
                 background = if (active) glossyCard("#EEF2FF", "#C7D2FE", 28f) else null
                 setPadding(8, 14, 8, 14)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(4, 0, 4, 0) }
@@ -3141,14 +3182,14 @@ class MainActivity : AppCompatActivity() {
         }
         wrap.addView(TextView(this).apply {
             text = "📤 Excel (.xlsx) Eksport va Ulashish"
-            setTextColor(Color.parseColor("#0F172A"))
+            setTextColor(Color.parseColor("#F8FAFC"))
             textSize = 19f
             setTypeface(null, Typeface.BOLD)
             setPadding(0, 0, 0, 12)
         })
         wrap.addView(TextView(this).apply {
             text = "Barcha o'zgarishlar avtomatik ravishda telefonning 'Download/QarzFy/QarzFy_AvtoBazasi.xlsx' fayliga saqlanib boradi (dastur o'chirilsa ham o'chmaydi!)."
-            setTextColor(Color.parseColor("#475569"))
+            setTextColor(Color.parseColor("#94A3B8"))
             textSize = 13f
             setPadding(0, 0, 0, 24)
         })
@@ -3199,7 +3240,7 @@ class MainActivity : AppCompatActivity() {
         }
         wrap.addView(TextView(this).apply {
             text = "📥 Excel (.xlsx / .csv) Fayldan Import"
-            setTextColor(Color.parseColor("#0F172A"))
+            setTextColor(Color.parseColor("#F8FAFC"))
             textSize = 19f
             setTypeface(null, Typeface.BOLD)
             setPadding(0, 0, 0, 12)
@@ -3263,13 +3304,13 @@ class MainActivity : AppCompatActivity() {
             val cSel = (selectedKind == "Chiqim")
             btnChiqim.apply {
                 text = "Chiqim (Qarz yozish)"; gravity = Gravity.CENTER; textSize = 13.5f; setTypeface(null, Typeface.BOLD)
-                setTextColor(if (cSel) Color.WHITE else Color.parseColor("#475569"))
+                setTextColor(if (cSel) Color.WHITE else Color.parseColor("#94A3B8"))
                 background = if (cSel) glossyOrangeGrad(26f) else null
                 setPadding(16, 22, 16, 22)
             }
             btnKirim.apply {
                 text = "Kirim (To'lov olish)"; gravity = Gravity.CENTER; textSize = 13.5f; setTypeface(null, Typeface.BOLD)
-                setTextColor(if (!cSel) Color.WHITE else Color.parseColor("#475569"))
+                setTextColor(if (!cSel) Color.WHITE else Color.parseColor("#94A3B8"))
                 background = if (!cSel) glossyPurpleGrad(26f) else null
                 setPadding(16, 22, 16, 22)
             }
@@ -3284,7 +3325,7 @@ class MainActivity : AppCompatActivity() {
 
         wrap.addView(TextView(this).apply {
             text = "👤 ${client.name}  •  Joriy balans: ${formatMoney(client.balUzs, "UZS")}"
-            setTextColor(Color.parseColor("#0F172A")); textSize = 15.5f; setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#F8FAFC")); textSize = 15.5f; setTypeface(null, Typeface.BOLD)
             setPadding(0, 0, 0, 16)
         })
 
@@ -3295,7 +3336,7 @@ class MainActivity : AppCompatActivity() {
         var selectedDueDate = if (client.dueDate.isNotBlank() && client.dueDate != "Bugun") client.dueDate else defaultDueDateStr()
         val btnCalendarPicker = Button(this).apply {
             text = "📅 Qaytarish muddati: $selectedDueDate (Kalendar)"
-            setTextColor(Color.parseColor("#4F46E5"))
+            setTextColor(Color.parseColor("#00F5D4"))
             textSize = 13.5f
             setTypeface(null, Typeface.BOLD)
             background = glossyCard("#EEF2FF", "#6366F1", 30f)
@@ -3343,7 +3384,7 @@ class MainActivity : AppCompatActivity() {
         }
         wrap.addView(TextView(this).apply {
             text = if (isSupplier) "⚡ Tezkor ta'minotchi tranzaksiyasi" else "⚡ Tezkor tranzaksiya"
-            setTextColor(Color.parseColor("#0F172A")); textSize = 19f; setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#F8FAFC")); textSize = 19f; setTypeface(null, Typeface.BOLD)
             setPadding(0, 0, 0, 14)
         })
 
@@ -3352,7 +3393,7 @@ class MainActivity : AppCompatActivity() {
 
         wrap.addView(TextView(this).apply {
             text = "Mijozni tanlang (ustiga bosing):"
-            setTextColor(Color.parseColor("#475569")); textSize = 13.5f; setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#94A3B8")); textSize = 13.5f; setTypeface(null, Typeface.BOLD)
             setPadding(0, 4, 0, 14)
         })
 
@@ -3388,7 +3429,7 @@ class MainActivity : AppCompatActivity() {
                         setTextColor(Color.WHITE); background = circleAvatarBg(ch)
                         layoutParams = LinearLayout.LayoutParams(100, 100).apply { bottomMargin = 12 }
                     })
-                    card.addView(TextView(this).apply { text = p.name; maxLines = 1; setTextColor(Color.parseColor("#0F172A")); textSize = 13f; setTypeface(null, Typeface.BOLD) })
+                    card.addView(TextView(this).apply { text = p.name; maxLines = 1; setTextColor(Color.parseColor("#F8FAFC")); textSize = 13f; setTypeface(null, Typeface.BOLD) })
                     card.addView(TextView(this).apply { text = formatMoney(Math.abs(p.balUzs), "UZS"); setTextColor(Color.parseColor("#EA580C")); textSize = 11.5f })
                     row.addView(card)
                 }
@@ -3427,7 +3468,7 @@ class MainActivity : AppCompatActivity() {
         }
         wrap.addView(TextView(this).apply {
             text = if (isSupplier) "🚚 Yangi Ta'minotchi Qo'shish" else "👤+ Yangi Qarzdor / Mijoz Qo'shish"
-            setTextColor(Color.parseColor("#0F172A")); textSize = 19f; setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#F8FAFC")); textSize = 19f; setTypeface(null, Typeface.BOLD)
             setPadding(0, 0, 0, 18)
         })
         val etName = makeGlassInput("Ism Familiya (masalan: Ali Valiyev) *", "")
@@ -3440,7 +3481,7 @@ class MainActivity : AppCompatActivity() {
         var selectedDueDate = defaultDueDateStr()
         val btnCalendar = Button(this).apply {
             text = "📅 Qarz berish muddati: $selectedDueDate (Kalendar)"
-            setTextColor(Color.parseColor("#4F46E5"))
+            setTextColor(Color.parseColor("#00F5D4"))
             textSize = 13.5f
             setTypeface(null, Typeface.BOLD)
             background = glossyCard("#EEF2FF", "#6366F1", 30f)
@@ -3503,12 +3544,12 @@ class MainActivity : AppCompatActivity() {
         }
         wrap.addView(TextView(this).apply {
             text = "💎 Obuna Tariflari (${remainingDaysText()})"
-            setTextColor(Color.parseColor("#0F172A")); textSize = 18f; setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#F8FAFC")); textSize = 18f; setTypeface(null, Typeface.BOLD)
             setPadding(0, 0, 0, 8)
         })
         wrap.addView(TextView(this).apply {
             text = "Tarifni tanlang -> Kartaga to'lov qilib skrinshot oling -> Botga skrinshotni yuboring:"
-            setTextColor(Color.parseColor("#475569")); textSize = 12.5f
+            setTextColor(Color.parseColor("#94A3B8")); textSize = 12.5f
             setPadding(0, 0, 0, 18)
         })
         wrap.addView(tariffButton("💳 1 Oy — ${formatMoney(price1Month, "so'm")}", "Botga to'lov cheki (skrinshot) yuborish", "#6D28D9") { sheet.dismiss(); selectTariffAndPayDialog(1, price1Month) })
@@ -3771,7 +3812,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             emps.forEach { (n, p) ->
                 col.addView(TextView(this).apply {
-                    text = "👨‍💼 $n  •  📞 $p"; setTextColor(Color.parseColor("#0F172A")); textSize = 15f
+                    text = "👨‍💼 $n  •  📞 $p"; setTextColor(Color.parseColor("#F8FAFC")); textSize = 15f
                     background = glossyCard("#FFFFFF", "#FFFFFF", 32f); setPadding(32, 26, 32, 26)
                     layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 12 }
                 })
@@ -3845,9 +3886,24 @@ class MainActivity : AppCompatActivity() {
     }
 
 
+    private fun autoLockLabel(ms: Long): String = when (ms) {
+        30_000L -> "30 sekund"
+        60_000L -> "1 minut"
+        300_000L -> "5 minut"
+        600_000L -> "10 minut"
+        3_600_000L -> "1 soat"
+        else -> "1 minut"
+    }
+
     private fun renderPinLockScreen(mode: String) {
+        // Telefonning qo'shimcha klaviaturasi chiqmasligi uchun majburiy yopamiz
+        try {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            currentFocus?.let { imm?.hideSoftInputFromWindow(it.windowToken, 0) }
+        } catch (_: Exception) {}
+
         rootLayout.removeAllViews()
-        rootLayout.setBackgroundColor(Color.parseColor("#0F172A"))
+        rootLayout.setBackgroundColor(Color.parseColor("#060913"))
 
         var currentStep = mode
         if (mode == "SETUP_NEW") currentStep = "SETUP_FIRST"
@@ -3857,83 +3913,88 @@ class MainActivity : AppCompatActivity() {
 
         val mainCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(48, 70, 48, 50)
+            gravity = Gravity.CENTER
+            setPadding(40, 56, 40, 48)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.MATCH_PARENT
             )
         }
 
+        val neonBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.parseColor("#11192E"), Color.parseColor("#0B1021"))
+            ).apply {
+                cornerRadius = 52f
+                setStroke(3, Color.parseColor("#00F5D4"))
+            }
+            setPadding(40, 48, 40, 48)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
         val logo = ImageView(this).apply {
             setImageResource(R.drawable.ic_qarzdaftar_logo)
-            layoutParams = LinearLayout.LayoutParams(150, 150).apply { bottomMargin = 20 }
+            layoutParams = LinearLayout.LayoutParams(135, 135).apply { bottomMargin = 16 }
         }
-        mainCol.addView(logo)
+        neonBox.addView(logo)
 
         val tvTitle = TextView(this).apply {
             text = when (currentStep) {
-                "UNLOCK" -> "🔒 6 xonali PIN-kodni kiriting"
-                "CHANGE_VERIFY_OLD" -> "🔑 Eski 6 xonali PIN-kodni kiriting"
-                else -> "🛡️ Yangi 6 xonali PIN-kod o'rnating"
+                "UNLOCK" -> "⚡ PIN-KODNI KIRITING"
+                "CHANGE_VERIFY_OLD" -> "🔑 ESKI PIN-KODNI TASDIQLANG"
+                else -> "🛡️ YANGI 6 XONALI PIN-KOD"
             }
-            setTextColor(Color.WHITE)
-            textSize = 20f
+            setTextColor(Color.parseColor("#00F5D4"))
+            textSize = 18.5f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
         }
-        mainCol.addView(tvTitle)
+        neonBox.addView(tvTitle)
 
         val tvSub = TextView(this).apply {
             text = when (currentStep) {
-                "UNLOCK" -> "Dasturga kirish uchun PIN-kod tering yoki Face ID / Barmoq izidan foydalaning"
-                "CHANGE_VERIFY_OLD" -> "PIN-kodni o'zgartirish uchun avval amaldagi PIN-kodni tasdiqlang"
-                else -> "Keyingi safar dasturga tez va xavfsiz kirish uchun 6 ta raqam tanlang"
+                "UNLOCK" -> "6 xonali kodni tering yoki Biometrik qulfni bosing"
+                "CHANGE_VERIFY_OLD" -> "O'zgartirish uchun avval joriy 6 xonali PIN-kodni tering"
+                else -> "Xavfsizlik uchun 6 ta raqamdan iborat kod tanlang"
             }
             setTextColor(Color.parseColor("#94A3B8"))
-            textSize = 13f
+            textSize = 12.5f
             gravity = Gravity.CENTER
-            setPadding(20, 10, 20, 36)
+            setPadding(16, 8, 16, 36)
         }
-        mainCol.addView(tvSub)
+        neonBox.addView(tvSub)
 
+        // Faqat 6 ta Neon Nuqta Indikatori (Qo'shimcha yozish maydoni va telefon klaviaturasi yo'q!)
         val dotsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 28 }
+            ).apply { bottomMargin = 42 }
         }
         val dotViews = Array(6) {
             View(this).apply {
-                layoutParams = LinearLayout.LayoutParams(44, 44).apply { setMargins(18, 0, 18, 0) }
-                background = glossyRoundBtnBg("#1E293B", "#64748B")
+                layoutParams = LinearLayout.LayoutParams(42, 42).apply { setMargins(16, 0, 16, 0) }
+                background = glossyRoundBtnBg("#0F172A", "#334155")
                 dotsRow.addView(this)
             }
         }
-        mainCol.addView(dotsRow)
-
-        val hiddenNumericInput = EditText(this).apply {
-            hint = "6 xonali raqam..."
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.parseColor("#64748B"))
-            gravity = Gravity.CENTER
-            textSize = 16f
-            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
-            background = glossyCard("#1E293B", "#334155", 28f)
-            setPadding(30, 18, 30, 18)
-            layoutParams = LinearLayout.LayoutParams(420, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 28 }
-        }
-        mainCol.addView(hiddenNumericInput)
+        neonBox.addView(dotsRow)
 
         fun updateDotsUI() {
             for (i in 0 until 6) {
                 val filled = i < typedPin.length
                 dotViews[i].background = if (filled) {
-                    glossyRoundBtnBg("#6366F1", "#38BDF8")
+                    glossyRoundBtnBg("#00F5D4", "#38BDF8")
                 } else {
-                    glossyRoundBtnBg("#1E293B", "#64748B")
+                    glossyRoundBtnBg("#0F172A", "#334155")
                 }
             }
         }
@@ -3943,14 +4004,14 @@ class MainActivity : AppCompatActivity() {
                 "UNLOCK" -> {
                     if (code == appPinCode) {
                         isPinUnlockedThisSession = true
-                        Toast.makeText(this, "🔓 Xush kelibsiz!", Toast.LENGTH_SHORT).show()
+                        lastInteractionTimeMs = System.currentTimeMillis()
+                        Toast.makeText(this, "⚡ Qulf ochildi!", Toast.LENGTH_SHORT).show()
                         checkServerSubscriptionAndRender()
                         scheduleMidnightAutoExcelSaveWithSignal()
                         checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
                     } else {
-                        Toast.makeText(this, "❌ PIN-kod noto'g'ri! Qayta urinib ko'ring.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "❌ PIN-kod noto'g'ri!", Toast.LENGTH_SHORT).show()
                         typedPin = ""
-                        hiddenNumericInput.setText("")
                         updateDotsUI()
                     }
                 }
@@ -3958,14 +4019,12 @@ class MainActivity : AppCompatActivity() {
                     if (code == appPinCode) {
                         currentStep = "SETUP_FIRST"
                         typedPin = ""
-                        hiddenNumericInput.setText("")
-                        tvTitle.text = "🛡️ Yangi 6 xonali PIN-kodni kiriting"
-                        tvSub.text = "Eski PIN tasdiqlandi! Endi yangi 6 xonali PIN-kod o'rnating"
+                        tvTitle.text = "🛡️ YANGI 6 XONALI PIN-KOD"
+                        tvSub.text = "Endi yangi 6 xonali PIN-kodni tering"
                         updateDotsUI()
                     } else {
                         Toast.makeText(this, "❌ Eski PIN-kod noto'g'ri!", Toast.LENGTH_SHORT).show()
                         typedPin = ""
-                        hiddenNumericInput.setText("")
                         updateDotsUI()
                     }
                 }
@@ -3973,27 +4032,26 @@ class MainActivity : AppCompatActivity() {
                     firstEnteredPin = code
                     currentStep = "SETUP_CONFIRM"
                     typedPin = ""
-                    hiddenNumericInput.setText("")
-                    tvTitle.text = "🔁 PIN-kodni qayta tasdiqlang"
-                    tvSub.text = "Adashmaslik uchun 6 xonali PIN-kodni yana bir marta kiriting"
+                    tvTitle.text = "🔁 PIN-KODNI TASDIQLANG"
+                    tvSub.text = "Yangi 6 xonali PIN-kodni qayta tering"
                     updateDotsUI()
                 }
                 "SETUP_CONFIRM" -> {
                     if (code == firstEnteredPin) {
                         appPinCode = code
                         isPinUnlockedThisSession = true
+                        lastInteractionTimeMs = System.currentTimeMillis()
                         saveSessionSynchronously(true)
-                        Toast.makeText(this, "✅ 6 xonali PIN-kod muvaffaqiyatli saqlandi!", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this, "✅ 6 xonali PIN-kod o'rnatildi!", Toast.LENGTH_LONG).show()
                         checkServerSubscriptionAndRender()
                         scheduleMidnightAutoExcelSaveWithSignal()
                         checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
                     } else {
-                        Toast.makeText(this, "❌ PIN-kodlar mos kelmadi! Qaytadan kiriting.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this, "❌ PIN-kodlar mos kelmadi! Qaytadan tering.", Toast.LENGTH_LONG).show()
                         currentStep = "SETUP_FIRST"
                         firstEnteredPin = ""
                         typedPin = ""
-                        hiddenNumericInput.setText("")
-                        tvTitle.text = "🛡️ Yangi 6 xonali PIN-kod o'rnating"
+                        tvTitle.text = "🛡️ YANGI 6 XONALI PIN-KOD"
                         tvSub.text = "6 ta raqam tanlang"
                         updateDotsUI()
                     }
@@ -4001,28 +4059,9 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        var isInternalEdit = false
-        hiddenNumericInput.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) {
-                if (isInternalEdit) return
-                val str = s?.toString()?.filter { it.isDigit() }?.take(6) ?: ""
-                typedPin = str
-                updateDotsUI()
-                if (typedPin.length == 6) {
-                    handleSixDigitsCompleted(typedPin)
-                }
-            }
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-        })
-
         fun appendDigit(d: String) {
             if (typedPin.length < 6) {
                 typedPin += d
-                isInternalEdit = true
-                hiddenNumericInput.setText(typedPin)
-                hiddenNumericInput.setSelection(typedPin.length)
-                isInternalEdit = false
                 updateDotsUI()
                 if (typedPin.length == 6) {
                     handleSixDigitsCompleted(typedPin)
@@ -4033,10 +4072,6 @@ class MainActivity : AppCompatActivity() {
         fun removeLastDigit() {
             if (typedPin.isNotEmpty()) {
                 typedPin = typedPin.dropLast(1)
-                isInternalEdit = true
-                hiddenNumericInput.setText(typedPin)
-                hiddenNumericInput.setSelection(typedPin.length)
-                isInternalEdit = false
                 updateDotsUI()
             }
         }
@@ -4070,12 +4105,12 @@ class MainActivity : AppCompatActivity() {
                 val btnKey = TextView(this).apply {
                     text = keyLabel
                     gravity = Gravity.CENTER
-                    setTextColor(Color.WHITE)
+                    setTextColor(if (keyLabel == "👆") Color.WHITE else Color.parseColor("#00F5D4"))
                     textSize = 22f
                     setTypeface(null, Typeface.BOLD)
-                    background = if (keyLabel == "👆") glossyPurpleGrad(90f) else glossyRoundBtnBg("#1E293B", "#334155")
-                    elevation = 8f
-                    layoutParams = LinearLayout.LayoutParams(165, 165).apply { setMargins(22, 0, 22, 0) }
+                    background = if (keyLabel == "👆") glossyPurpleGrad(90f) else glossyRoundBtnBg("#151F38", "#00F5D4")
+                    elevation = 10f
+                    layoutParams = LinearLayout.LayoutParams(155, 155).apply { setMargins(20, 0, 20, 0) }
                     setOnClickListener {
                         when (keyLabel) {
                             "⌫" -> removeLastDigit()
@@ -4083,7 +4118,7 @@ class MainActivity : AppCompatActivity() {
                                 if (currentStep == "UNLOCK") {
                                     triggerBiometricPromptForUnlock()
                                 } else {
-                                    Toast.makeText(this@MainActivity, "Avval 6 xonali PIN-kodni kiriting!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(this@MainActivity, "Avval 6 xonali PIN-kodni tering!", Toast.LENGTH_SHORT).show()
                                 }
                             }
                             else -> appendDigit(keyLabel)
@@ -4094,32 +4129,27 @@ class MainActivity : AppCompatActivity() {
             }
             keypadGrid.addView(rLayout)
         }
-        mainCol.addView(keypadGrid)
+        neonBox.addView(keypadGrid)
 
         if (mode == "CHANGE_VERIFY_OLD") {
-            mainCol.addView(Button(this).apply {
-                text = "⬅ Bekor qilish va qaytish"
+            neonBox.addView(Button(this).apply {
+                text = "⬅ Bekor qilish"
                 setTextColor(Color.WHITE)
-                background = glossyCard("#334155", "#64748B", 30f)
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, 110).apply { topMargin = 12 }
-                setPadding(40, 0, 40, 0)
+                background = glossyRedGrad(28f)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, 105).apply { topMargin = 14 }
+                setPadding(44, 0, 44, 0)
                 setOnClickListener { renderMainWorkspace() }
             })
         }
 
+        mainCol.addView(neonBox)
         val scroll = ScrollView(this).apply { addView(mainCol) }
         rootLayout.addView(scroll)
-
-        hiddenNumericInput.postDelayed({
-            hiddenNumericInput.requestFocus()
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-            imm?.showSoftInput(hiddenNumericInput, InputMethodManager.SHOW_IMPLICIT)
-        }, 250)
 
         if (currentStep == "UNLOCK" && isBiometricEnabled) {
             mainCol.postDelayed({
                 triggerBiometricPromptForUnlock()
-            }, 350)
+            }, 300)
         }
     }
 
@@ -4136,7 +4166,8 @@ class MainActivity : AppCompatActivity() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     super.onAuthenticationSucceeded(result)
                     isPinUnlockedThisSession = true
-                    Toast.makeText(this@MainActivity, "🔓 Biometrik tasdiqlandi!", Toast.LENGTH_SHORT).show()
+                    lastInteractionTimeMs = System.currentTimeMillis()
+                    Toast.makeText(this@MainActivity, "⚡ Biometrik tasdiqlandi!", Toast.LENGTH_SHORT).show()
                     checkServerSubscriptionAndRender()
                     scheduleMidnightAutoExcelSaveWithSignal()
                     checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
@@ -4144,7 +4175,7 @@ class MainActivity : AppCompatActivity() {
             })
 
             val promptInfo = BiometricPrompt.PromptInfo.Builder()
-                .setTitle("QarzFy Xavfsizlik Qulfi")
+                .setTitle("QarzFy Neon Xavfsizlik")
                 .setSubtitle("Face ID yoki Barmoq izi orqali dasturni oching")
                 .setNegativeButtonText("PIN-kod terish")
                 .build()
@@ -4153,32 +4184,109 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {}
     }
 
-    private fun showPinAndBiometricSettingsDialog() {
-        val pinStatus = if (appPinCode.length == 6) "✅ O'rnatilgan (6 xonali)" else "🔴 O'rnatilmagan"
-        val bioStatus = if (isBiometricEnabled) "✅ Yoqilgan (Face ID / Barmoq izi)" else "🔴 O'chirilgan"
-        val nl = "\n"
-        val msg = "📌 PIN-kod holati: $pinStatus" + nl +
-            "👆 Face ID / Fingerprint: $bioStatus" + nl + nl +
-            "PIN-kodni o'zgartirish uchun avval eski 6 xonali PIN-kodingizni kiritasiz."
+    private fun showAutoLockTimerSelectionDialog() {
+        val options = arrayOf(
+            "⏱ 30 sekund",
+            "⏱ 1 minut",
+            "⏱ 5 minut",
+            "⏱ 10 minut",
+            "⏱ 1 soat"
+        )
+        val values = longArrayOf(
+            30_000L,
+            60_000L,
+            300_000L,
+            600_000L,
+            3_600_000L
+        )
+        val currentIdx = values.indexOf(autoLockTimeoutMs).let { if (it >= 0) it else 1 }
 
         AlertDialog.Builder(this)
-            .setTitle("🔐 Ekran PIN-kodi va Biometrik Qulf")
-            .setMessage(msg)
-            .setPositiveButton("🔄 PIN-kodni o'zgartirish") { _, _ ->
+            .setTitle("🔒 Avtomatik Qulflash Vaqti (Auto-Lock)")
+            .setSingleChoiceItems(options, currentIdx) { dialog, which ->
+                autoLockTimeoutMs = values[which]
+                saveSessionSynchronously(isLoggedIn)
+                Toast.makeText(this, "✅ Avtomatik qulflash: ${options[which]} ga belgilandi!", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+                showPinAndBiometricSettingsDialog()
+            }
+            .setNegativeButton("Yopish", null)
+            .show()
+    }
+
+    private fun showPinAndBiometricSettingsDialog() {
+        val sheet = BottomSheetDialog(this)
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = glossyCard("#131C31", "#00F5D4", 48f)
+            setPadding(42, 32, 42, 52)
+        }
+
+        wrap.addView(TextView(this).apply {
+            text = "🔐 PIN-kod, Biometrik va Avto-Lock"
+            setTextColor(Color.parseColor("#00F5D4"))
+            textSize = 18f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 0, 0, 18)
+        })
+
+        val pinStatus = if (appPinCode.length == 6) "✅ O'rnatilgan (6 xonali)" else "🔴 O'rnatilmagan"
+        val bioStatus = if (isBiometricEnabled) "✅ Yoqilgan" else "🔴 O'chirilgan"
+        val lockTimeStr = autoLockLabel(autoLockTimeoutMs)
+
+        wrap.addView(TextView(this).apply {
+            text = "📌 PIN-kod: $pinStatus
+👆 Face ID / Barmoq izi: $bioStatus
+⏱ Avtomatik Lock vaqti: $lockTimeStr"
+            setTextColor(Color.parseColor("#E2E8F0"))
+            textSize = 13.5f
+            setPadding(0, 0, 0, 24)
+        })
+
+        wrap.addView(Button(this).apply {
+            text = "🔄 6 xonali PIN-kodni o'zgartirish (Eski PIN bilan)"
+            setTextColor(Color.WHITE)
+            background = glossyPurpleGrad(30f)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 120).apply { bottomMargin = 14 }
+            setOnClickListener {
+                sheet.dismiss()
                 if (appPinCode.length == 6) {
                     renderPinLockScreen(mode = "CHANGE_VERIFY_OLD")
                 } else {
                     renderPinLockScreen(mode = "SETUP_NEW")
                 }
             }
-            .setNeutralButton(if (isBiometricEnabled) "👆 FaceID/Barmoq izini O'chirish" else "👆 FaceID/Barmoq izini Yoqish") { _, _ ->
+        })
+
+        wrap.addView(Button(this).apply {
+            text = "⏱ Avtomatik Lock vaqti: $lockTimeStr (O'zgartirish)"
+            setTextColor(Color.WHITE)
+            background = glossyOrangeGrad(30f)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 120).apply { bottomMargin = 14 }
+            setOnClickListener {
+                sheet.dismiss()
+                showAutoLockTimerSelectionDialog()
+            }
+        })
+
+        wrap.addView(Button(this).apply {
+            text = if (isBiometricEnabled) "👆 Face ID / Barmoq izini O'chirish" else "👆 Face ID / Barmoq izini Yoqish"
+            setTextColor(Color.parseColor("#00F5D4"))
+            background = glossyCard("#1E293B", "#00F5D4", 30f)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 120)
+            setOnClickListener {
                 isBiometricEnabled = !isBiometricEnabled
                 saveSessionSynchronously(isLoggedIn)
-                Toast.makeText(this, if (isBiometricEnabled) "✅ Face ID / Barmoq izi yoqildi!" else "🔴 Biometrik kirish o'chirildi", Toast.LENGTH_SHORT).show()
+                sheet.dismiss()
+                Toast.makeText(this@MainActivity, if (isBiometricEnabled) "✅ Face ID / Barmoq izi yoqildi!" else "🔴 O'chirildi", Toast.LENGTH_SHORT).show()
+                showPinAndBiometricSettingsDialog()
             }
-            .setNegativeButton("Yopish", null)
-            .show()
+        })
+
+        sheet.setContentView(wrap)
+        sheet.show()
     }
+
     private fun showPushSettingsDialog() {
         AlertDialog.Builder(this).setTitle("🔔 Avto-Save va Muddat Avto-SMS")
             .setMessage("• Har bir kirim-chiqim va qarz yozilganda fayl avtomatik Download/QarzFy/QarzFy_AvtoBazasi.xlsx ga saqlanadi.\n• Qarz muddati kelganda xaridorlar va ta'minotchilarga avtomatik SMS yuboriladi.")
