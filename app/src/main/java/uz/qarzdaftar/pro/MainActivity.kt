@@ -4235,9 +4235,7 @@ class MainActivity : AppCompatActivity() {
         val lockTimeStr = autoLockLabel(autoLockTimeoutMs)
 
         wrap.addView(TextView(this).apply {
-            text = "📌 PIN-kod: $pinStatus
-👆 Face ID / Barmoq izi: $bioStatus
-⏱ Avtomatik Lock vaqti: $lockTimeStr"
+            text = "📌 PIN-kod: $pinStatus\n👆 Face ID / Barmoq izi: $bioStatus\n⏱ Avtomatik Lock vaqti: $lockTimeStr"
             setTextColor(Color.parseColor("#E2E8F0"))
             textSize = 13.5f
             setPadding(0, 0, 0, 24)
