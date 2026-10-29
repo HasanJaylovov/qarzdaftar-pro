@@ -3227,7 +3227,7 @@ class MainActivity : AppCompatActivity() {
         sheet.show()
     }
 
-    private fun showImportBottomSheet() {
+    fun showImportBottomSheet() {
         val sheet = BottomSheetDialog(this)
         val wrap = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -3879,7 +3879,7 @@ class MainActivity : AppCompatActivity() {
         else -> "1 minut"
     }
 
-    private fun renderPinLockScreen(mode: String) {
+    fun renderPinLockScreen(mode: String) {
         try {
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
             currentFocus?.let { imm?.hideSoftInputFromWindow(it.windowToken, 0) }
