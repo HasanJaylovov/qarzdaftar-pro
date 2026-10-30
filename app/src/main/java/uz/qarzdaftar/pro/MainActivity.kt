@@ -333,6 +333,55 @@ class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_m
     }
 
     // Qarz yozuvini o'chirish/yopish: tarixdan o'chib ketmaydi, "O'chirilgan (sana va vaqt)" bo'lib saqlanib qoladi!
+    fun clearAllDebtsForPerson(personName: String, personPhone: String, isSupplier: Boolean): Long {
+        val db = writableDatabase
+        val supFlag = if (isSupplier) 1 else 0
+        val delTime = nowStr()
+
+        var currentDebt = 0L
+        val c = db.rawQuery("SELECT id, bal_uzs FROM clients WHERE name = ? AND is_supplier = ?", arrayOf(personName, supFlag.toString()))
+        if (c.moveToFirst()) {
+            val clientId = c.getInt(0)
+            val balUzs = c.getLong(1)
+            currentDebt = Math.abs(balUzs)
+            db.execSQL("UPDATE clients SET bal_usd = 0, bal_uzs = 0 WHERE id = ?", arrayOf<Any>(clientId))
+        }
+        c.close()
+
+        // Barcha faol Chiqim (qarz) yozuvlarini "To'liq hamma summani berdi - O'chirildi" deb tarixda saqlab qo'yamiz
+        val newStatus = "To'liq to'landi / O'chirildi ($delTime)"
+        db.execSQL(
+            "UPDATE transactions SET status = ? WHERE person_name = ? AND is_supplier = ? AND status = 'Faol'",
+            arrayOf<Any>(newStatus, personName, supFlag)
+        )
+
+        if (currentDebt > 0L) {
+            val payPrefix = if (isSupplier) "ST-FULL-" else "D-FULL-"
+            val payTxId = payPrefix + (100000 + Random().nextInt(900000))
+            insertTxDirect(
+                payTxId,
+                "Kirim",
+                personName,
+                personPhone,
+                currentDebt,
+                "UZS",
+                delTime,
+                "",
+                "To'liq hamma summani berdi (Barcha qarzlar yopildi)",
+                "To'liq yopildi ($delTime)",
+                isSupplier
+            )
+            val catName = if (isSupplier) "Ta'minotchi to'liq yopildi: $personName" else "Qarz to'liq yopildi: $personName"
+            db.execSQL(
+                "INSERT INTO kassa (type, category, amount, currency, pay_type, date, note, creator) VALUES ('Kirim', ?, ?, 'UZS', 'Naqd', ?, 'To''liq hamma qarzni berdi', 'Avto')",
+                arrayOf<Any>(catName, currentDebt, delTime)
+            )
+        }
+
+        onDataChangedCallback?.invoke()
+        return currentDebt
+    }
+
     fun markTransactionDeletedAndRevertBalance(tx: TxRec) {
         if (tx.status.startsWith("O'chirildi")) return
         val db = writableDatabase
@@ -897,37 +946,54 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun triggerBackgroundSmsAndVoiceCall(clientName: String, phoneNumber: String, amount: Long, kind: String, note: String, dueDate: String = "", isSupplier: Boolean = false) {
+        val personRecord = db.getPersonByName(clientName, isSupplier)
         var cleanPhone = normalizeUzPhone(phoneNumber)
-        if (cleanPhone.isEmpty()) {
-            val found = db.getPersonByName(clientName, isSupplier)
-            if (found != null) {
-                cleanPhone = normalizeUzPhone(found.phone)
-            }
+        if (cleanPhone.isEmpty() && personRecord != null) {
+            cleanPhone = normalizeUzPhone(personRecord.phone)
         }
+
+        // Tranzaksiyadan keyingi joriy qolgan umumiy qarz qoldig'ini olamiz
+        val currentBalUzs = personRecord?.balUzs ?: 0L
+        val remainingDebtUzs = if (currentBalUzs < 0L) Math.abs(currentBalUzs) else 0L
+        val fmtRemaining = formatMoney(remainingDebtUzs, "so'm")
 
         val fmtAmt = formatMoney(Math.abs(amount), "so'm")
         val duePart = if (dueDate.isNotBlank() && dueDate != "Bugun") " Muddat: $dueDate." else ""
 
         val smsText = when {
-            kind == "Yopildi" -> {
+            kind == "ToliqYopildi" -> {
                 if (isSupplier) {
-                    "Hurmatli hamkor ($clientName), $storeName do'koni bilan $fmtAmt hisob-kitob to'liq yopildi ($note)."
+                    "Hurmatli hamkor ($clientName), $storeName do'koni bilan jami $fmtAmt hisob-kitob to'liq yopildi. Qolgan qarz: 0 so'm."
                 } else {
-                    "Hurmatli $clientName, $storeName do'konidagi $fmtAmt qarzingiz to'liq yopildi (o'chirildi). Rahmat!"
+                    "Hurmatli $clientName, siz $storeName do'konidagi jami $fmtAmt qarzingizni to'liq to'ladingiz. Qolgan qarzingiz: 0 so'm. Rahmat!"
+                }
+            }
+            kind == "Yopildi" -> {
+                val remPart = if (remainingDebtUzs > 0L) " Qolgan umumiy qarzingiz: $fmtRemaining." else " Qolgan qarzingiz: 0 so'm."
+                if (isSupplier) {
+                    "Hurmatli hamkor ($clientName), $storeName do'koni bilan $fmtAmt qarz yopildi ($note).$remPart"
+                } else {
+                    "Hurmatli $clientName, $storeName do'konidagi $fmtAmt qarzingiz yopildi (o'chirildi).$remPart Rahmat!"
                 }
             }
             kind == "Kirim" -> {
-                if (isSupplier) {
-                    "Hurmatli hamkor ($clientName), $storeName do'konida $fmtAmt kirim/to'lov qayd etildi ($note)."
+                val remPart = if (remainingDebtUzs > 0L) {
+                    " Qolgan umumiy qarzingiz: $fmtRemaining."
                 } else {
-                    "Hurmatli $clientName, $storeName do'konidagi qarzingizdan $fmtAmt to'lov qabul qilindi. Rahmat!"
+                    " Barcha qarzingiz to'liq uzildi (Qoldiq: 0 so'm)."
+                }
+                if (isSupplier) {
+                    "Hurmatli hamkor ($clientName), $storeName do'konida $fmtAmt to'lov/kirim qayd etildi ($note).$remPart"
+                } else {
+                    "Hurmatli $clientName, $storeName do'konidagi qarzingizdan $fmtAmt to'lov qabul qilindi.$remPart Rahmat!"
                 }
             }
             else -> {
+                val totalPart = if (remainingDebtUzs > 0L) " Jami umumiy qarzingiz: $fmtRemaining." else ""
                 if (isSupplier) {
-                    "Hurmatli hamkor ($clientName), $storeName do'konida $fmtAmt qarz/chiqim qayd etildi ($note).$duePart"
+                    "Hurmatli hamkor ($clientName), $storeName do'konida $fmtAmt qarz/chiqim yozildi ($note).$totalPart$duePart"
                 } else {
-                    "Hurmatli $clientName, $storeName do'konida sizga $fmtAmt qarz yozildi ($note).$duePart"
+                    "Hurmatli $clientName, $storeName do'konida sizga $fmtAmt qarz yozildi ($note).$totalPart$duePart"
                 }
             }
         }
@@ -950,6 +1016,7 @@ class MainActivity : AppCompatActivity() {
                         put("client_name", clientName)
                         put("client_phone", cleanPhone)
                         put("amount", fmtAmt)
+                        put("remaining_debt", fmtRemaining)
                         put("kind", kind)
                         put("note", note)
                         put("due_date", dueDate)
@@ -2372,42 +2439,134 @@ class MainActivity : AppCompatActivity() {
         val scroll = ScrollView(this)
         val wrap = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = glossyCard("#FFFFFF", "#E2E8F0", 54f)
-            setPadding(42, 32, 42, 56)
+            background = glossyCard("#FFFFFF", "#E2E8F0", 42f)
+            setPadding(28, 24, 28, 48)
         }
 
-        // Yuqori Ma'lumot Kartasi
+        fun confirmAndClearAllDebts() {
+            val currentDebtAbs = Math.abs(client.balUzs)
+            val amtDisplay = formatMoney(currentDebtAbs, "UZS")
+            AlertDialog.Builder(this)
+                .setTitle("🗑 Barcha qarzni to'liq yopish / o'chirish")
+                .setMessage("${client.name} haqiqatan ham barcha qarzini ($amtDisplay) to'liq berdimi?
+
+Tasdiqlasangiz:
+• Barcha berilgan qarz ro'yxatlari 'To'liq hamma summani berdi (O'chirildi)' deb yopiladi;
+• Summa Kirim va Statistika balansiga tushadi;
+• Mijozga qarz to'liq yopilgani haqida SMS boradi.")
+                .setPositiveButton("✅ Ha, to'liq berdi (O'chirish)") { _, _ ->
+                    val clearedSum = db.clearAllDebtsForPerson(client.name, client.phone, isSupplier)
+                    val smsSum = if (clearedSum > 0L) clearedSum else currentDebtAbs
+                    triggerBackgroundSmsAndVoiceCall(
+                        client.name,
+                        client.phone,
+                        smsSum,
+                        "ToliqYopildi",
+                        "To'liq hamma summani berdi",
+                        client.dueDate,
+                        isSupplier
+                    )
+                    Toast.makeText(this, "✅ ${client.name}ning barcha qarzlari to'liq yopildi va SMS yuborildi!", Toast.LENGTH_LONG).show()
+                    sheet.dismiss()
+                    renderMainWorkspace()
+                    val updated = db.getPersonByName(client.name, isSupplier)
+                    if (updated != null) {
+                        showPersonFullHistoryAndActionSheet(updated, isSupplier)
+                    }
+                }
+                .setNegativeButton("Bekor qilish", null)
+                .show()
+        }
+
+        // Yuqori Ma'lumot Kartasi + O'ng burchakda DOIMIY CHIQINDIDON (🗑) TUGMASI
         val headerBox = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = glossyPurpleGrad(38f)
-            setPadding(36, 30, 36, 30)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 20 }
+            background = glossyPurpleGrad(30f)
+            setPadding(26, 22, 26, 22)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 14 }
         }
-        headerBox.addView(TextView(this).apply {
+
+        val headerTopRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+
+        val titleCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        titleCol.addView(TextView(this).apply {
             text = "${if (isSupplier) "🚚 Ta'minotchi:" else "👤 Xaridor:"} ${client.name}"
             setTextColor(Color.WHITE)
-            textSize = 15.5f
+            textSize = 16.5f
             setTypeface(null, Typeface.BOLD)
         })
-        headerBox.addView(TextView(this).apply {
-            text = "📞 Telefon: ${client.phone}\n💰 Joriy balans: ${formatMoney(client.balUzs, "UZS")}\n⏳ Qaytarish muddati: ${client.dueDate.ifEmpty { "Belgilanmagan" }}"
+        titleCol.addView(TextView(this).apply {
+            text = "📞 ${client.phone}  •  ⏳ Muddat: ${client.dueDate.ifEmpty { "Yo'q" }}"
             setTextColor(Color.parseColor("#E0E7FF"))
-            textSize = 13.5f
-            setPadding(0, 8, 0, 0)
+            textSize = 12f
+            setPadding(0, 4, 0, 0)
         })
+
+        // Doimiy tepada turuvchi Chiqindidon (Umumiy qarzlarni o'chirish) tugmasi
+        val trashClearAllBtn = FrameLayout(this).apply {
+            background = glossyRedGrad(24f)
+            elevation = 8f
+            layoutParams = LinearLayout.LayoutParams(88, 88).apply { leftMargin = 12 }
+            addView(TextView(this@MainActivity).apply {
+                text = "🗑"
+                gravity = Gravity.CENTER
+                textSize = 18f
+                setTextColor(Color.WHITE)
+            })
+            setOnClickListener { confirmAndClearAllDebts() }
+        }
+
+        headerTopRow.addView(titleCol)
+        headerTopRow.addView(trashClearAllBtn)
+        headerBox.addView(headerTopRow)
+
+        val remainingAbs = Math.abs(client.balUzs)
+        headerBox.addView(TextView(this).apply {
+            text = if (client.balUzs < 0) {
+                "🔴 Qolgan umumiy qarz: ${formatMoney(remainingAbs, "UZS")}"
+            } else if (client.balUzs > 0) {
+                "🟢 Haqdorlik balansi: +${formatMoney(remainingAbs, "UZS")}"
+            } else {
+                "✅ Umumiy qarz: 0 UZS (To'liq yopilgan)"
+            }
+            setTextColor(Color.WHITE)
+            textSize = 14.5f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 12, 0, 10)
+        })
+
+        // Kartochka tepasida doimiy ko'rinib turuvchi "To'liq hamma qarzni berdi (🗑 O'chirish)" tugmasi
+        headerBox.addView(Button(this).apply {
+            text = "🗑 To'liq hamma qarzni berdi (Umumiy o'chirish)"
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyRedGrad(22f)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 86)
+            setOnClickListener { confirmAndClearAllDebts() }
+        })
+
         wrap.addView(headerBox)
 
-        // Tezkor Amallar: + Qarz yozish | + To'lov olish | SMS Eslatma
+        // Tezkor Amallar: + Qarz yozish | + Qisman To'lov olish | SMS Eslatma
         val actRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 20 }
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 16 }
         }
         actRow.addView(Button(this).apply {
             text = "➕ Qarz Yozish"
             setTextColor(Color.WHITE)
-            textSize = 12f
-            background = glossyOrangeGrad(28f)
-            layoutParams = LinearLayout.LayoutParams(0, 115, 1f).apply { rightMargin = 8 }
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyOrangeGrad(24f)
+            layoutParams = LinearLayout.LayoutParams(0, 92, 1f).apply { rightMargin = 8 }
             setOnClickListener {
                 sheet.dismiss()
                 showClientKirimChiqimBottomSheet(client, isSupplier, defaultKind = "Chiqim")
@@ -2416,9 +2575,10 @@ class MainActivity : AppCompatActivity() {
         actRow.addView(Button(this).apply {
             text = "💵 To'lov Olish"
             setTextColor(Color.WHITE)
-            textSize = 12f
-            background = glossyPurpleGrad(28f)
-            layoutParams = LinearLayout.LayoutParams(0, 115, 1f).apply { rightMargin = 8 }
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyPurpleGrad(24f)
+            layoutParams = LinearLayout.LayoutParams(0, 92, 1f).apply { rightMargin = 8 }
             setOnClickListener {
                 sheet.dismiss()
                 showClientKirimChiqimBottomSheet(client, isSupplier, defaultKind = "Kirim")
@@ -2427,23 +2587,24 @@ class MainActivity : AppCompatActivity() {
         actRow.addView(Button(this).apply {
             text = "📩 SMS"
             setTextColor(Color.WHITE)
-            textSize = 12f
-            background = glossyRoundBtnBg("#059669")
-            layoutParams = LinearLayout.LayoutParams(140, 115)
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyRoundBtnBg("#059669", "#059669")
+            layoutParams = LinearLayout.LayoutParams(125, 92)
             setOnClickListener {
-                val msg = "Hurmatli ${client.name}, $storeName do'konida ${formatMoney(Math.abs(client.balUzs), "so'm")} hisobingiz bor. Muddat: ${client.dueDate}."
+                val msg = "Hurmatli ${client.name}, $storeName do'konida qolgan umumiy qarzingiz: ${formatMoney(Math.abs(client.balUzs), "so'm")}. Muddat: ${client.dueDate}."
                 sendAutoSms(client.phone, msg)
-                Toast.makeText(this@MainActivity, "📩 SMS yuborildi!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "📩 Umumiy qarz qoldig'i SMS qilib yuborildi!", Toast.LENGTH_SHORT).show()
             }
         })
         wrap.addView(actRow)
 
         wrap.addView(TextView(this).apply {
-            text = "📜 Barcha Yozilgan va O'chirilgan Qarzlar Tarixi:"
+            text = "📜 Berilgan qarzlar, to'lovlar va o'chirilgan qarzlar tarixi:"
             setTextColor(Color.parseColor("#0F172A"))
-            textSize = 15.5f
+            textSize = 14f
             setTypeface(null, Typeface.BOLD)
-            setPadding(4, 0, 4, 14)
+            setPadding(4, 0, 4, 10)
         })
 
         val txList = db.getTransactionsForPerson(client.name, isSupplier)
@@ -2451,23 +2612,24 @@ class MainActivity : AppCompatActivity() {
             wrap.addView(TextView(this).apply {
                 text = "Hozircha tranzaksiyalar tarixi bo'sh."
                 setTextColor(Color.parseColor("#64748B"))
-                textSize = 13.5f
-                background = glossyCard("#F8FAFC", "#E2E8F0", 28f)
-                setPadding(30, 40, 30, 40)
+                textSize = 13f
+                background = glossyCard("#F8FAFC", "#E2E8F0", 24f)
+                setPadding(24, 30, 24, 30)
             })
         } else {
             txList.forEach { tx ->
-                val isDeleted = tx.status.startsWith("O'chirildi")
+                val isDeleted = tx.status.startsWith("O'chirildi") || tx.status.startsWith("To'liq")
                 val isDebt = (tx.kind == "Chiqim")
                 val txCard = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
-                    background = glossyCard(if (isDeleted) "#F1F5F9" else "#F8FAFC", if (isDeleted) "#94A3B8" else "#CBD5E1", 32f)
-                    setPadding(30, 24, 30, 24)
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 14 }
+                    background = glossyCard(if (isDeleted) "#F1F5F9" else "#F8FAFC", if (isDeleted) "#CBD5E1" else "#E2E8F0", 26f)
+                    setPadding(22, 18, 22, 18)
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 10 }
                 }
 
                 val badgeText = when {
-                    isDeleted -> "⚪ O'CHIRILGAN QARZ (${tx.kind}) • ${formatMoney(tx.amount, tx.currency)}"
+                    tx.status.startsWith("To'liq to'landi") -> "⚪ TO'LIQ HAMMA SUMMANI BERDI (O'chirildi) • ${formatMoney(tx.amount, tx.currency)}"
+                    isDeleted && isDebt -> "⚪ O'CHIRILGAN QARZ (${tx.kind}) • ${formatMoney(tx.amount, tx.currency)}"
                     isDebt -> "🔴 QARZ YOZILDI (Chiqim) • -${formatMoney(tx.amount, tx.currency)}"
                     else -> "🟢 TO'LOV OLINDI (Kirim) • +${formatMoney(tx.amount, tx.currency)}"
                 }
@@ -2476,29 +2638,31 @@ class MainActivity : AppCompatActivity() {
                     text = badgeText
                     setTextColor(
                         when {
-                            isDeleted -> Color.parseColor("#64748B")
+                            isDeleted && isDebt -> Color.parseColor("#64748B")
                             isDebt -> Color.parseColor("#DC2626")
                             else -> Color.parseColor("#059669")
                         }
                     )
-                    textSize = 14.5f
+                    textSize = 13.5f
                     setTypeface(null, Typeface.BOLD)
                 })
 
                 txCard.addView(TextView(this).apply {
-                    text = "🕒 Yozilgan vaqti: ${tx.date}\n⏳ Qaytarish muddati: ${tx.dueDate.ifEmpty { "Belgilanmagan" }}\n📝 Izoh: ${tx.note.ifEmpty { "Izohsiz" }}\n📌 Holati: ${tx.status}"
-                    setTextColor(Color.parseColor("#475569"))
-                    textSize = 12.5f
-                    setPadding(0, 8, 0, 12)
+                    text = "🕒 Vaqti: ${tx.date}  |  ⏳ Muddat: ${tx.dueDate.ifEmpty { "Yo'q" }}
+📝 Izoh: ${tx.note.ifEmpty { "Izohsiz" }}
+📌 Holati: ${tx.status}"
+                    setTextColor(Color.parseColor("#334155"))
+                    textSize = 12f
+                    setPadding(0, 6, 0, 10)
                 })
 
-                if (!isDeleted) {
+                if (!isDeleted && isDebt) {
                     txCard.addView(Button(this).apply {
-                        text = "🗑 Qarzni O'chirish / Yopish (Tarixda saqlanadi)"
+                        text = "🗑 Shu qarzni yopish / o'chirish"
                         setTextColor(Color.WHITE)
                         textSize = 11.5f
-                        background = glossyRedGrad(24f)
-                        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 98)
+                        background = glossyRedGrad(20f)
+                        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 84)
                         setOnClickListener {
                             db.markTransactionDeletedAndRevertBalance(tx)
                             val targetPh = if (tx.personPhone.isNotBlank()) tx.personPhone else client.phone
@@ -2511,7 +2675,7 @@ class MainActivity : AppCompatActivity() {
                                 tx.dueDate,
                                 isSupplier
                             )
-                            Toast.makeText(this@MainActivity, "✅ Qarz yopildi va xaridorga SMS yuborildi!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@MainActivity, "✅ Qarz o'chirildi va qolgan qoldiq SMS qilib yuborildi!", Toast.LENGTH_SHORT).show()
                             sheet.dismiss()
                             renderMainWorkspace()
                             val updatedPerson = db.getPersonByName(client.name, isSupplier)

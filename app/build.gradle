@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 160
-        versionName "16.0-TemplatePastelUI"
+        versionCode 170
+        versionName "17.0-RemainingDebtSmsAndFullClear"
     }
 
     buildTypes {
