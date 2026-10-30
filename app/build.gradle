@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 171
-        versionName "17.1-AutoSaveExportFixed"
+        versionCode 180
+        versionName "18.0-QarzDaftarProUI"
     }
 
     buildTypes {
