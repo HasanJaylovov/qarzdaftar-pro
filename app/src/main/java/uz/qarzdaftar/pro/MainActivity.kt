@@ -2453,12 +2453,7 @@ class MainActivity : AppCompatActivity() {
             val amtDisplay = formatMoney(currentDebtAbs, "UZS")
             AlertDialog.Builder(this)
                 .setTitle("🗑 Barcha qarzni to'liq yopish / o'chirish")
-                .setMessage("${client.name} haqiqatan ham barcha qarzini ($amtDisplay) to'liq berdimi?
-
-Tasdiqlasangiz:
-• Barcha berilgan qarz ro'yxatlari 'To'liq hamma summani berdi (O'chirildi)' deb yopiladi;
-• Summa Kirim va Statistika balansiga tushadi;
-• Mijozga qarz to'liq yopilgani haqida SMS boradi.")
+                .setMessage("${client.name} haqiqatan ham barcha qarzini ($amtDisplay) to'liq berdimi?\n\nTasdiqlasangiz:\n• Barcha berilgan qarz ro'yxatlari 'To'liq hamma summani berdi (O'chirildi)' deb yopiladi;\n• Summa Kirim va Statistika balansiga tushadi;\n• Mijozga qarz to'liq yopilgani haqida SMS boradi.")
                 .setPositiveButton("✅ Ha, to'liq berdi (O'chirish)") { _, _ ->
                     val clearedSum = db.clearAllDebtsForPerson(client.name, client.phone, isSupplier)
                     val smsSum = if (clearedSum > 0L) clearedSum else currentDebtAbs
@@ -2653,9 +2648,7 @@ Tasdiqlasangiz:
                 })
 
                 txCard.addView(TextView(this).apply {
-                    text = "🕒 Vaqti: ${tx.date}  |  ⏳ Muddat: ${tx.dueDate.ifEmpty { "Yo'q" }}
-📝 Izoh: ${tx.note.ifEmpty { "Izohsiz" }}
-📌 Holati: ${tx.status}"
+                    text = "🕒 Vaqti: ${tx.date}  |  ⏳ Muddat: ${tx.dueDate.ifEmpty { "Yo'q" }}\n📝 Izoh: ${tx.note.ifEmpty { "Izohsiz" }}\n📌 Holati: ${tx.status}"
                     setTextColor(Color.parseColor("#334155"))
                     textSize = 12f
                     setPadding(0, 6, 0, 10)
