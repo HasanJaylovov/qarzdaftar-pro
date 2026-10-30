@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 170
-        versionName "17.0-RemainingDebtSmsAndFullClear"
+        versionCode 171
+        versionName "17.1-AutoSaveExportFixed"
     }
 
     buildTypes {

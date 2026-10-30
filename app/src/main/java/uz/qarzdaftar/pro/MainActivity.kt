@@ -669,6 +669,11 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         lastInteractionTimeMs = System.currentTimeMillis()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                savePermanentBackupToDownloadsQarzFy()
+            } catch (_: Exception) {}
+        }
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
@@ -3306,74 +3311,111 @@ Tasdiqlasangiz:
         return bar
     }
 
-    // ==================== 3. MEDIASTORE CONTENT URI BILAN .XLSX SAQLASH VA TELEGRAMGA ULASHISH ====================
-    private fun savePermanentBackupToDownloadsQarzFy() {
-        val xlsxBytes = generateRealXlsxZipBytes()
-        val fileName = "QarzFy_AvtoBazasi.xlsx"
+    // ==================== 3. 100% ISHLAYDIGAN AVTO-SAVE EXPORT (DOWNLOAD/QARZFY) ====================
+    private fun writeXlsxToDownloadsMediaStore(fileName: String, xlsxBytes: ByteArray): Pair<String, Uri?> {
+        var finalPath = "/storage/emulated/0/Download/QarzFy/$fileName"
+        var resultUri: Uri? = null
 
+        // 1-usul: Ichki app xotirasiga har doim zaxira nusxa yozish
+        try {
+            val appSubDir = File(getExternalFilesDir(null), "QarzFy")
+            if (!appSubDir.exists()) appSubDir.mkdirs()
+            val localFile = File(appSubDir, fileName)
+            localFile.writeBytes(xlsxBytes)
+            resultUri = Uri.fromFile(localFile)
+        } catch (_: Exception) {}
+
+        // 2-usul: To'g'ridan-to'g'ri Download/QarzFy papkasiga yozish
         try {
             val pubDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "QarzFy")
             if (!pubDir.exists()) pubDir.mkdirs()
-            File(pubDir, fileName).writeBytes(xlsxBytes)
-        } catch (_: Exception) {}
-
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                contentResolver.delete(
-                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                    "${MediaStore.Downloads.DISPLAY_NAME} = ?",
-                    arrayOf(fileName)
-                )
-                val values = ContentValues().apply {
-                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-                    put(MediaStore.Downloads.MIME_TYPE, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/QarzFy")
-                }
-                val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                if (uri != null) {
-                    contentResolver.openOutputStream(uri)?.use { it.write(xlsxBytes) }
-                }
+            val pubFile = File(pubDir, fileName)
+            FileOutputStream(pubFile, false).use {
+                it.write(xlsxBytes)
+                it.flush()
+            }
+            finalPath = pubFile.absolutePath
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                resultUri = Uri.fromFile(pubFile)
             }
         } catch (_: Exception) {}
+
+        // 3-usul: Android 10+ (Q va undan yuqori) uchun MediaStore.Downloads orqali mavjud faylni yangilash yoki yangi ochish
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                val resolver = contentResolver
+                val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+                val projection = arrayOf(MediaStore.Downloads._ID)
+                val selection = "${MediaStore.Downloads.DISPLAY_NAME} = ?"
+                val selectionArgs = arrayOf(fileName)
+
+                var existingUri: Uri? = null
+                resolver.query(collection, projection, selection, selectionArgs, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val id = cursor.getLong(0)
+                        existingUri = android.content.ContentUris.withAppendedId(collection, id)
+                    }
+                }
+
+                if (existingUri != null) {
+                    try {
+                        resolver.openOutputStream(existingUri!!, "rwt")?.use { out ->
+                            out.write(xlsxBytes)
+                            out.flush()
+                        }
+                        resultUri = existingUri
+                    } catch (_: Exception) {
+                        try {
+                            resolver.delete(existingUri!!, null, null)
+                        } catch (_: Exception) {}
+                        existingUri = null
+                    }
+                }
+
+                if (existingUri == null) {
+                    val values = ContentValues().apply {
+                        put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                        put(MediaStore.Downloads.MIME_TYPE, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                        put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/QarzFy")
+                    }
+                    val inserted = resolver.insert(collection, values)
+                    if (inserted != null) {
+                        resolver.openOutputStream(inserted, "w")?.use { out ->
+                            out.write(xlsxBytes)
+                            out.flush()
+                        }
+                        resultUri = inserted
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        return Pair(finalPath, resultUri)
+    }
+
+    private fun savePermanentBackupToDownloadsQarzFy(): String {
+        val xlsxBytes = generateRealXlsxZipBytes()
+        val (path1, _) = writeXlsxToDownloadsMediaStore("QarzFy_AvtoBazasi.xlsx", xlsxBytes)
+        val todayTag = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+        writeXlsxToDownloadsMediaStore("QarzFy_KunlikAvto_$todayTag.xlsx", xlsxBytes)
+        return path1
     }
 
     private fun saveRealXlsxAndGetShareableUri(): Triple<File, String, Uri> {
         val dateTag = SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.getDefault()).format(Date())
         val fileName = "QarzFy_Hisobot_$dateTag.xlsx"
+        val xlsxBytes = generateRealXlsxZipBytes()
 
         val appSubDir = File(getExternalFilesDir(null), "QarzFy")
         if (!appSubDir.exists()) appSubDir.mkdirs()
         val localXlsx = File(appSubDir, fileName)
-
-        val xlsxBytes = generateRealXlsxZipBytes()
         localXlsx.writeBytes(xlsxBytes)
 
+        // Doimiy avto-bazani ham yangilab qo'yamiz
         savePermanentBackupToDownloadsQarzFy()
 
-        var publicPath = "/storage/emulated/0/Download/QarzFy/$fileName"
-        var shareUri: Uri = Uri.fromFile(localXlsx)
-
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val values = ContentValues().apply {
-                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-                    put(MediaStore.Downloads.MIME_TYPE, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/QarzFy")
-                }
-                val insertedUri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                if (insertedUri != null) {
-                    contentResolver.openOutputStream(insertedUri)?.use { it.write(xlsxBytes) }
-                    shareUri = insertedUri
-                }
-            } else {
-                val pubDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "QarzFy")
-                if (!pubDir.exists()) pubDir.mkdirs()
-                val pubFile = File(pubDir, fileName)
-                pubFile.writeBytes(xlsxBytes)
-                publicPath = pubFile.absolutePath
-                shareUri = Uri.fromFile(pubFile)
-            }
-        } catch (_: Exception) {}
+        val (publicPath, mediaUri) = writeXlsxToDownloadsMediaStore(fileName, xlsxBytes)
+        val shareUri = mediaUri ?: Uri.fromFile(localXlsx)
 
         return Triple(localXlsx, publicPath, shareUri)
     }
@@ -3524,18 +3566,41 @@ Tasdiqlasangiz:
 
     private fun scheduleMidnightAutoExcelSaveWithSignal() {
         CoroutineScope(Dispatchers.IO).launch {
-            while (true) {
-                val cal = Calendar.getInstance()
-                if (cal.get(Calendar.HOUR_OF_DAY) == 0 && cal.get(Calendar.MINUTE) == 0) {
-                    val (_, path, _) = saveRealXlsxAndGetShareableUri()
+            // 1) Dastur ochilishi bilan darhol Avto-Save qilamiz va bugungi kunlik eksportni tekshiramiz
+            try {
+                val savedPath = savePermanentBackupToDownloadsQarzFy()
+                val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                val lastAutoExportDay = prefs.getString("last_auto_export_day", "") ?: ""
+                if (lastAutoExportDay != todayStr) {
+                    val (_, fullPath, _) = saveRealXlsxAndGetShareableUri()
+                    prefs.edit().putString("last_auto_export_day", todayStr).commit()
                     withContext(Dispatchers.Main) {
-                        triggerAutoExportSignalAndNotification(path)
-                        checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
-                        Toast.makeText(this@MainActivity, "🔔 00:00 Avto-Eksport saqlandi:\n$path", Toast.LENGTH_LONG).show()
+                        triggerAutoExportSignalAndNotification(fullPath)
+                        Toast.makeText(this@MainActivity, "✅ Kunlik Avto-Eksport saqlandi: Download/QarzFy", Toast.LENGTH_SHORT).show()
                     }
-                    delay(65_000L)
                 }
-                delay(25_000L)
+            } catch (_: Exception) {}
+
+            // 2) Har kecha soat 00:00 da (yoki yangi kun boshlanganda) avtomatik eksport qilish
+            while (true) {
+                delay(20_000L)
+                try {
+                    val nowDay = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                    val savedDay = prefs.getString("last_auto_export_day", "") ?: ""
+                    val cal = Calendar.getInstance()
+                    val isMidnight = (cal.get(Calendar.HOUR_OF_DAY) == 0 && cal.get(Calendar.MINUTE) <= 2)
+
+                    if (nowDay != savedDay || isMidnight) {
+                        val (_, path, _) = saveRealXlsxAndGetShareableUri()
+                        prefs.edit().putString("last_auto_export_day", nowDay).commit()
+                        withContext(Dispatchers.Main) {
+                            triggerAutoExportSignalAndNotification(path)
+                            checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
+                            Toast.makeText(this@MainActivity, "🔔 Avto-Eksport saqlandi:\n$path", Toast.LENGTH_LONG).show()
+                        }
+                        delay(120_000L)
+                    }
+                } catch (_: Exception) {}
             }
         }
     }
