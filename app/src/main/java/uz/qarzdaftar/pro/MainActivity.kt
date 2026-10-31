@@ -4422,8 +4422,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun triggerAutoExportSignalAndNotification(savedPath: String) {
         try {
-            val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
-            toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 220)
+            val toneGen = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 85)
+            toneGen.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 220)
         } catch (_: Exception) {}
         try {
             val chId = "qarzfy_export_channel"
