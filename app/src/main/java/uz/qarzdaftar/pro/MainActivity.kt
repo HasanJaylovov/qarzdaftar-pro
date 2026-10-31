@@ -2074,7 +2074,7 @@ class MainActivity : AppCompatActivity() {
                     setTypeface(null, Typeface.BOLD)
                 })
                 mid.addView(TextView(this).apply {
-                    text = "${tx.personName} • ${formatMoney(tx.amount, "so'm")}\n${tx.date}"
+                    text = "${tx.personName} • ${formatMoney(tx.amount, \"so'm\")}\n${tx.date}"
                     setTextColor(Color.parseColor("#64748B"))
                     textSize = 12f
                 })
@@ -3171,7 +3171,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 0, 0, 6)
         })
         catInfo.addView(TextView(this).apply {
-            text = "🟢 Kirim balansi: ${formatMoney(jamiKirim, "so'm")}\n🔴 Qolgan qarz: ${formatMoney(jamiQarz, "so'm")}\n👥 Ro'yxat soni: ${persons.size} ta"
+            text = "🟢 Kirim balansi: ${formatMoney(jamiKirim, \"so'm\")}\n🔴 Qolgan qarz: ${formatMoney(jamiQarz, \"so'm\")}\n👥 Ro'yxat soni: ${persons.size} ta"
             setTextColor(Color.parseColor("#475569"))
             textSize = 12f
         })
@@ -4304,4 +4304,565 @@ class MainActivity : AppCompatActivity() {
         var inQuotes = false
         for (ch in line) {
             when {
-                ch == '"' -> inQuotes = !inQuotes\n(ch == ',' || ch == ';') && !inQuotes -> {\nresult.add(cur.toString())\ncur.clear()\n}\nelse -> cur.append(ch)\n}\n}\nresult.add(cur.toString())\nreturn result\n}\n\n// ==================== DIALOGLAR ====================\nprivate fun buildEmployeesSection(): View {\nval col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }\ncol.addView(Button(this).apply {\ntext = "+ Xodim qo'shish (Barchasi | Oylik | Kunlik)"\nsetTextColor(Color.WHITE); background = glossyPurpleGrad(32f)\nlayoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 125).apply { bottomMargin = 18 }\nsetOnClickListener { openAddEmployeeDialog() }\n})\nval emps = db.getEmployees()\nif (emps.isEmpty()) {\ncol.addView(TextView(this).apply {\ntext = "Xodimlar topilmadi"; gravity = Gravity.CENTER; setTextColor(Color.parseColor("#64748B"))\nbackground = glossyCard("#FFFFFF", "#FFFFFF", 36f); setPadding(40, 60, 40, 60)\n})\n} else {\nemps.forEach { (n, p) ->\ncol.addView(TextView(this).apply {\ntext = "👨‍💼 $n  •  📞 $p"; setTextColor(Color.parseColor("#0F172A")); textSize = 15f\nbackground = glossyCard("#FFFFFF", "#FFFFFF", 32f); setPadding(32, 26, 32, 26)\nlayoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 12 }\n})\n}\n}\nreturn col\n}\n\nprivate fun openShoppingListDialog() {\nval et = EditText(this).apply { hint = "Bozorlik ro'yxati" }\nAlertDialog.Builder(this).setTitle("📋 Bozorlik").setView(et).setPositiveButton("Saqlash", null).show()\n}\n\nprivate fun openAddKassaDialog(type: String) {\nval layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(45, 25, 45, 10) }\nval etCat = EditText(this).apply { hint = "Kategoriya (Savdo, Ijara)" }\nval etAmt = EditText(this).apply { hint = "Summa (UZS)"; inputType = InputType.TYPE_CLASS_NUMBER }\nval etNote = EditText(this).apply { hint = "Izoh" }\nlayout.addView(etCat); layout.addView(etAmt); layout.addView(etNote)\nAlertDialog.Builder(this).setTitle("💵 Kassaga $type").setView(layout)\n.setPositiveButton("Saqlash") { _, _ ->\nval amt = cleanNumberInput(etAmt.text.toString())\nif (amt > 0) {\ndb.addKassa(type, etCat.text.toString().ifEmpty { "Umumiy" }, amt, "UZS", "Naqd", etNote.text.toString(), storeName)\nrenderMainWorkspace()\n}\n}.setNegativeButton("Yopish", null).show()\n}\n\nprivate fun openAddProductDialog() {\nval layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(45, 25, 45, 10) }\nval etName = EditText(this).apply { hint = "Mahsulot nomi *" }\nval etQty = EditText(this).apply { hint = "Miqdor (dona)"; inputType = InputType.TYPE_CLASS_NUMBER; setText("1") }\nval etCost = EditText(this).apply { hint = "Tan narx (10 000 UZS)"; inputType = InputType.TYPE_CLASS_NUMBER }\nval etSale = EditText(this).apply { hint = "Sotuv narxi (12 000 UZS)"; inputType = InputType.TYPE_CLASS_NUMBER }\nval etCode = EditText(this).apply { hint = "Shtrix-kod / Kodi" }\nlayout.addView(etName); layout.addView(etQty); layout.addView(etCost); layout.addView(etSale); layout.addView(etCode)\nAlertDialog.Builder(this).setTitle("📦 Mahsulot yaratish / Kirim").setView(layout)\n.setPositiveButton("Qo'shish") { _, _ ->\nval n = etName.text.toString().trim()\nif (n.isNotEmpty()) {\ndb.addProduct(n, etCode.text.toString().ifEmpty { "BC-101" }, etQty.text.toString().toIntOrNull() ?: 1, "dona", cleanNumberInput(etCost.text.toString()), cleanNumberInput(etSale.text.toString()), "UZS", storeName)\nrenderMainWorkspace()\n}\n}.setNegativeButton("Yopish", null).show()\n}\n\nprivate fun openAddEmployeeDialog() {\nval layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(45, 25, 45, 10) }\nval etName = EditText(this).apply { hint = "Xodim ismi" }\nval etPhone = EditText(this).apply { hint = "UZ Telefon"; setText("+998") }\nlayout.addView(etName); layout.addView(etPhone)\nAlertDialog.Builder(this).setTitle("👨‍💼 Xodim qo'shish").setView(layout)\n.setPositiveButton("Saqlash") { _, _ ->\nif (etName.text.isNotEmpty()) { db.addEmployee(etName.text.toString(), etPhone.text.toString(), "Oylik"); renderMainWorkspace() }\n}.setNegativeButton("Yopish", null).show()\n}\n\nprivate fun openCreateFolderDialog() {\nval et = EditText(this).apply { hint = "Papka nomi" }\nAlertDialog.Builder(this).setTitle("📁 Papka yaratish").setView(et).setPositiveButton("Saqlash", null).show()\n}\n\nprivate fun openSalesCalculatorDialog() {\nval et = EditText(this).apply { hint = "Summa (UZS)"; inputType = InputType.TYPE_CLASS_NUMBER }\nAlertDialog.Builder(this).setTitle("🧮 Sotuv kalkulyatori").setView(et)\n.setPositiveButton("Kassaga Kirim") { _, _ ->\nval v = cleanNumberInput(et.text.toString())\nif (v > 0) { db.addKassa("Kirim", "Kalkulyator", v, "UZS", "Naqd", "", storeName); renderMainWorkspace() }\n}.setNegativeButton("Yopish", null).show()\n}\n\n\nprivate fun autoLockLabel(ms: Long): String = when (ms) {\n30_000L -> "30 sekund"\n60_000L -> "1 minut"\n300_000L -> "5 minut"\n600_000L -> "10 minut"\n3_600_000L -> "1 soat"\nelse -> "1 minut"\n}\n\nfun renderPinLockScreen(mode: String) {\ntry {\nval imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager\ncurrentFocus?.let { imm?.hideSoftInputFromWindow(it.windowToken, 0) }\n} catch (_: Exception) {}\n\nrootLayout.removeAllViews()\nrootLayout.setBackgroundColor(Color.parseColor("#F5F7FF"))\n\nvar currentStep = mode\nif (mode == "SETUP_NEW") currentStep = "SETUP_FIRST"\n\nvar firstEnteredPin = ""\nvar typedPin = ""\n\nval mainCol = LinearLayout(this).apply {\norientation = LinearLayout.VERTICAL\ngravity = Gravity.CENTER\nsetPadding(28, 36, 28, 32)\nlayoutParams = LinearLayout.LayoutParams(\nLinearLayout.LayoutParams.MATCH_PARENT,\nLinearLayout.LayoutParams.MATCH_PARENT\n)\n}\n\nval cardBox = LinearLayout(this).apply {\norientation = LinearLayout.VERTICAL\ngravity = Gravity.CENTER\nbackground = glossyCard("#FFFFFF", "#E2E8F0", 38f)\nelevation = 10f\nsetPadding(28, 34, 28, 34)\nlayoutParams = LinearLayout.LayoutParams(\nLinearLayout.LayoutParams.MATCH_PARENT,\nLinearLayout.LayoutParams.WRAP_CONTENT\n)\n}\n\nval logo = ImageView(this).apply {\nsetImageResource(R.drawable.ic_qarzdaftar_logo)\nlayoutParams = LinearLayout.LayoutParams(82, 82).apply { bottomMargin = 12 }\n}\ncardBox.addView(logo)\n\nval tvTitle = TextView(this).apply {\ntext = when (currentStep) {\n"UNLOCK" -> "PIN-kodni kiriting"\n"CHANGE_VERIFY_OLD" -> "Eski PIN-kodni kiriting"\nelse -> "Yangi 6 xonali PIN-kod"\n}\nsetTextColor(Color.parseColor("#0F172A"))\ntextSize = 17f\nsetTypeface(null, Typeface.BOLD)\ngravity = Gravity.CENTER\n}\ncardBox.addView(tvTitle)\n\nval tvSub = TextView(this).apply {\ntext = when (currentStep) {\n"UNLOCK" -> "Dasturga kirish uchun 6 xonali kodni tering"\n"CHANGE_VERIFY_OLD" -> "O'zgartirish uchun amaldagi PIN-kodni tasdiqlang"\nelse -> "Xavfsizlik uchun 6 ta raqam tanlang"\n}\nsetTextColor(Color.parseColor("#64748B"))\ntextSize = 12f\ngravity = Gravity.CENTER\nsetPadding(12, 6, 12, 24)\n}\ncardBox.addView(tvSub)\n\nval dotsRow = LinearLayout(this).apply {\norientation = LinearLayout.HORIZONTAL\ngravity = Gravity.CENTER\nlayoutParams = LinearLayout.LayoutParams(\nLinearLayout.LayoutParams.MATCH_PARENT,\nLinearLayout.LayoutParams.WRAP_CONTENT\n).apply { bottomMargin = 28 }\n}\nval dotViews = Array(6) {\nView(this).apply {\nlayoutParams = LinearLayout.LayoutParams(32, 32).apply { setMargins(12, 0, 12, 0) }\nbackground = glossyRoundBtnBg("#F1F5F9", "#CBD5E1")\ndotsRow.addView(this)\n}\n}\ncardBox.addView(dotsRow)\n\nfun updateDotsUI() {\nfor (i in 0 until 6) {\nval filled = i < typedPin.length\ndotViews[i].background = if (filled) {\nglossyRoundBtnBg("#5B4CFF", "#5B4CFF")\n} else {\nglossyRoundBtnBg("#F1F5F9", "#CBD5E1")\n}\n}\n}\n\nfun handleSixDigitsCompleted(code: String) {\nwhen (currentStep) {\n"UNLOCK" -> {\nif (code == appPinCode) {\nisPinUnlockedThisSession = true\nlastInteractionTimeMs = System.currentTimeMillis()\ncheckServerSubscriptionAndRender()\nscheduleMidnightAutoExcelSaveWithSignal()\ncheckDueDatesAndSendAutoSmsForClientsAndSuppliers()\n} else {\nToast.makeText(this, "❌ PIN-kod noto'g'ri!", Toast.LENGTH_SHORT).show()\ntypedPin = ""\nupdateDotsUI()\n}\n}\n"CHANGE_VERIFY_OLD" -> {\nif (code == appPinCode) {\ncurrentStep = "SETUP_FIRST"\ntypedPin = ""\ntvTitle.text = "Yangi 6 xonali PIN-kod"\ntvSub.text = "Endi yangi 6 xonali PIN-kodni tering"\nupdateDotsUI()\n} else {\nToast.makeText(this, "❌ Eski PIN-kod noto'g'ri!", Toast.LENGTH_SHORT).show()\ntypedPin = ""\nupdateDotsUI()\n}\n}\n"SETUP_FIRST" -> {\nfirstEnteredPin = code\ncurrentStep = "SETUP_CONFIRM"\ntypedPin = ""\ntvTitle.text = "PIN-kodni tasdiqlang"\ntvSub.text = "Yangi 6 xonali PIN-kodni qayta tering"\nupdateDotsUI()\n}\n"SETUP_CONFIRM" -> {\nif (code == firstEnteredPin) {\nappPinCode = code\nisPinUnlockedThisSession = true\nlastInteractionTimeMs = System.currentTimeMillis()\nsaveSessionSynchronously(true)\nToast.makeText(this, "✅ PIN-kod saqlandi!", Toast.LENGTH_SHORT).show()\ncheckServerSubscriptionAndRender()\nscheduleMidnightAutoExcelSaveWithSignal()\ncheckDueDatesAndSendAutoSmsForClientsAndSuppliers()\n} else {\nToast.makeText(this, "❌ PIN-kodlar mos kelmadi!", Toast.LENGTH_SHORT).show()\ncurrentStep = "SETUP_FIRST"\nfirstEnteredPin = ""\ntypedPin = ""\ntvTitle.text = "Yangi 6 xonali PIN-kod"\ntvSub.text = "6 ta raqam tanlang"\nupdateDotsUI()\n}\n}\n}\n}\n\nfun appendDigit(d: String) {\nif (typedPin.length < 6) {\ntypedPin += d\nupdateDotsUI()\nif (typedPin.length == 6) {\nhandleSixDigitsCompleted(typedPin)\n}\n}\n}\n\nfun removeLastDigit() {\nif (typedPin.isNotEmpty()) {\ntypedPin = typedPin.dropLast(1)\nupdateDotsUI()\n}\n}\n\nval keypadGrid = LinearLayout(this).apply {\norientation = LinearLayout.VERTICAL\ngravity = Gravity.CENTER\nlayoutParams = LinearLayout.LayoutParams(\nLinearLayout.LayoutParams.MATCH_PARENT,\nLinearLayout.LayoutParams.WRAP_CONTENT\n)\n}\n\nval rows = listOf(\nlistOf("1", "2", "3"),\nlistOf("4", "5", "6"),\nlistOf("7", "8", "9"),\nlistOf("👆", "0", "⌫")\n)\n\nrows.forEach { r ->\nval rLayout = LinearLayout(this).apply {\norientation = LinearLayout.HORIZONTAL\ngravity = Gravity.CENTER\nlayoutParams = LinearLayout.LayoutParams(\nLinearLayout.LayoutParams.MATCH_PARENT,\nLinearLayout.LayoutParams.WRAP_CONTENT\n).apply { bottomMargin = 14 }\n}\nr.forEach { keyLabel ->\nval isBio = (keyLabel == "👆")\nval btnKey = TextView(this).apply {\ntext = keyLabel\ngravity = Gravity.CENTER\nsetTextColor(if (isBio) Color.WHITE else Color.parseColor("#0F172A"))\ntextSize = 15.5f\nsetTypeface(null, Typeface.BOLD)\nbackground = if (isBio) glossyPurpleGrad(70f) else glossyRoundBtnBg("#F8FAFC", "#E2E8F0")\nelevation = 3f\nlayoutParams = LinearLayout.LayoutParams(96, 96).apply { setMargins(16, 0, 16, 0) }\nsetOnClickListener {\nwhen (keyLabel) {\n"⌫" -> removeLastDigit()\n"👆" -> {\nif (currentStep == "UNLOCK") {\ntriggerBiometricPromptForUnlock()\n} else {\nToast.makeText(this@MainActivity, "Avval 6 xonali PIN-kodni tering!", Toast.LENGTH_SHORT).show()\n}\n}\nelse -> appendDigit(keyLabel)\n}\n}\n}\nrLayout.addView(btnKey)\n}\nkeypadGrid.addView(rLayout)\n}\ncardBox.addView(keypadGrid)\n\nif (mode == "CHANGE_VERIFY_OLD") {\ncardBox.addView(Button(this).apply {\ntext = "⬅ Bekor qilish"\nsetTextColor(Color.parseColor("#475569"))\ntextSize = 12.5f\nbackground = glossyCard("#F1F5F9", "#CBD5E1", 22f)\nlayoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, 90).apply { topMargin = 10 }\nsetPadding(32, 0, 32, 0)\nsetOnClickListener { renderMainWorkspace() }\n})\n}\n\nmainCol.addView(cardBox)\nval scroll = ScrollView(this).apply { addView(mainCol) }\nrootLayout.addView(scroll)\n\nif (currentStep == "UNLOCK" && isBiometricEnabled) {\nmainCol.postDelayed({\ntriggerBiometricPromptForUnlock()\n}, 300)\n}\n}\n\nprivate fun triggerBiometricPromptForUnlock() {\ntry {\nval biometricManager = BiometricManager.from(this)\nval canAuth = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL)\nif (canAuth != BiometricManager.BIOMETRIC_SUCCESS) {\nreturn\n}\n\nval executor = ContextCompat.getMainExecutor(this)\nval biometricPrompt = BiometricPrompt(this, executor, object : BiometricPrompt.AuthenticationCallback() {\noverride fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {\nsuper.onAuthenticationSucceeded(result)\nisPinUnlockedThisSession = true\nlastInteractionTimeMs = System.currentTimeMillis()\nToast.makeText(this@MainActivity, "⚡ Biometrik tasdiqlandi!", Toast.LENGTH_SHORT).show()\ncheckServerSubscriptionAndRender()\nscheduleMidnightAutoExcelSaveWithSignal()\ncheckDueDatesAndSendAutoSmsForClientsAndSuppliers()\n}\n})\n\nval promptInfo = BiometricPrompt.PromptInfo.Builder()\n.setTitle("QarzFy Neon Xavfsizlik")\n.setSubtitle("Face ID yoki Barmoq izi orqali dasturni oching")\n.setNegativeButtonText("PIN-kod terish")\n.build()\n\nbiometricPrompt.authenticate(promptInfo)\n} catch (_: Exception) {}\n}\n\nprivate fun showAutoLockTimerSelectionDialog() {\nval options = arrayOf(\n"⏱ 30 sekund",\n"⏱ 1 minut",\n"⏱ 5 minut",\n"⏱ 10 minut",\n"⏱ 1 soat"\n)\nval values = longArrayOf(\n30_000L,\n60_000L,\n300_000L,\n600_000L,\n3_600_000L\n)\nval currentIdx = values.indexOf(autoLockTimeoutMs).let { if (it >= 0) it else 1 }\n\nAlertDialog.Builder(this)\n.setTitle("🔒 Avtomatik Qulflash Vaqti (Auto-Lock)")\n.setSingleChoiceItems(options, currentIdx) { dialog, which ->\nautoLockTimeoutMs = values[which]\nsaveSessionSynchronously(isLoggedIn)\nToast.makeText(this, "✅ Avtomatik qulflash: ${options[which]} ga belgilandi!", Toast.LENGTH_SHORT).show()\ndialog.dismiss()\nshowPinAndBiometricSettingsDialog()\n}\n.setNegativeButton("Yopish", null)\n.show()\n}\n\nprivate fun showPinAndBiometricSettingsDialog() {\nval sheet = BottomSheetDialog(this)\nval wrap = LinearLayout(this).apply {\norientation = LinearLayout.VERTICAL\nbackground = glossyCard("#131C31", "#00F5D4", 48f)\nsetPadding(42, 32, 42, 52)\n}\n\nwrap.addView(TextView(this).apply {\ntext = "🔐 PIN-kod, Biometrik va Avto-Lock"\nsetTextColor(Color.parseColor("#5B4CFF"))\ntextSize = 15.5f\nsetTypeface(null, Typeface.BOLD)\nsetPadding(0, 0, 0, 18)\n})\n\nval pinStatus = if (appPinCode.length == 6) "✅ O'rnatilgan (6 xonali)" else "🔴 O'rnatilmagan"\nval bioStatus = if (isBiometricEnabled) "✅ Yoqilgan" else "🔴 O'chirilgan"\nval lockTimeStr = autoLockLabel(autoLockTimeoutMs)\n\nwrap.addView(TextView(this).apply {\ntext = "📌 PIN-kod: $pinStatus\n👆 Face ID / Barmoq izi: $bioStatus\n⏱ Avtomatik Lock vaqti: $lockTimeStr"\nsetTextColor(Color.parseColor("#1E293B"))\ntextSize = 13.5f\nsetPadding(0, 0, 0, 24)\n})\n\nwrap.addView(Button(this).apply {\ntext = "🔄 6 xonali PIN-kodni o'zgartirish (Eski PIN bilan)"\nsetTextColor(Color.WHITE)\nbackground = glossyPurpleGrad(30f)\nlayoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 92).apply { bottomMargin = 14 }\nsetOnClickListener {\nsheet.dismiss()\nif (appPinCode.length == 6) {\nrenderPinLockScreen(mode = "CHANGE_VERIFY_OLD")\n} else {\nrenderPinLockScreen(mode = "SETUP_NEW")\n}\n}\n})\n\nwrap.addView(Button(this).apply {\ntext = "⏱ Avtomatik Lock vaqti: $lockTimeStr (O'zgartirish)"\nsetTextColor(Color.WHITE)\nbackground = glossyOrangeGrad(30f)\nlayoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 92).apply { bottomMargin = 14 }\nsetOnClickListener {\nsheet.dismiss()\nshowAutoLockTimerSelectionDialog()\n}\n})\n\nwrap.addView(Button(this).apply {\ntext = if (isBiometricEnabled) "👆 Face ID / Barmoq izini O'chirish" else "👆 Face ID / Barmoq izini Yoqish"\nsetTextColor(Color.parseColor("#5B4CFF"))\nbackground = glossyCard("#1E293B", "#00F5D4", 30f)\nlayoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 92)\nsetOnClickListener {\nisBiometricEnabled = !isBiometricEnabled\nsaveSessionSynchronously(isLoggedIn)\nsheet.dismiss()\nToast.makeText(this@MainActivity, if (isBiometricEnabled) "✅ Face ID / Barmoq izi yoqildi!" else "🔴 O'chirildi", Toast.LENGTH_SHORT).show()\nshowPinAndBiometricSettingsDialog()\n}\n})\n\nsheet.setContentView(wrap)\nsheet.show()\n}\n\nprivate fun showPushSettingsDialog() {\nAlertDialog.Builder(this).setTitle("🔔 Avto-Save va Muddat Avto-SMS")\n.setMessage("• Har bir kirim-chiqim va qarz yozilganda fayl avtomatik Download/QarzFy/QarzFy_AvtoBazasi.xlsx ga saqlanadi.\n• Qarz muddati kelganda xaridorlar va ta'minotchilarga avtomatik SMS yuboriladi.")\n.setPositiveButton("Tushunarli", null).show()\n}\n\nprivate fun showVoiceSettingsDialog() {\nval statusTxt = if (isAutoVoiceCallEnabled) "✅ Yoqilgan (Fonda ko'rinmas)" else "🔴 O'chirilgan"\nAlertDialog.Builder(this)\n.setTitle("📞 Fonda Avto-Qo'ng'iroq (Bot) Sozlamasi")\n.setMessage("Holati: $statusTxt\n\nXaridorga yoki ta'minotchiga qarz yozilganda hamda muddati kelganda fonda SMS va ovozli xabar yuboriladi.")\n.setPositiveButton(if (isAutoVoiceCallEnabled) "O'chirish" else "Yoqish") { _, _ ->\nisAutoVoiceCallEnabled = !isAutoVoiceCallEnabled\nsaveSessionSynchronously(isLoggedIn)\nrenderMainWorkspace()\n}\n.setNeutralButton("🔊 Ovozni test qilish") { _, _ ->\nttsEngine?.speak("Assalomu alaykum! Hurmatli mijoz, do'konimizdan sizga qarz yozildi.", TextToSpeech.QUEUE_FLUSH, null, "test_voice")\n}\n.setNegativeButton("Yopish", null)\n.show()\n}\n\nprivate fun showPrinterSettingsDialog() {\nAlertDialog.Builder(this).setTitle("🖨 Printer sozlamalari").setMessage("Qog'oz eni: A4 / 80 mm / 58 mm. Bluetooth printer orqali chek chiqarish.").setPositiveButton("Test chek", null).show()\n}\n\nprivate fun showQrCodeAndOpenPageDialog() {\nAlertDialog.Builder(this).setTitle("🔳 Mening QR-kodim va Ochiq sahifa")\n.setMessage("Do'kon: $storeName\nHavola: $SERVER_URL/store/$storeId")\n.setPositiveButton("Sahifani ochish") { _, _ ->\nstartActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$SERVER_URL/store/$storeId")))\n}.setNegativeButton("Yopish", null).show()\n}\n\nprivate fun showCommunityAndAmbassadorDialog() {\nAlertDialog.Builder(this).setTitle("🤝 Hamjamiyat va Vazifalar").setMessage("Storyga post joylang (+5000 UZS) va Ambassador dasturida qatnashing!").setPositiveButton("Yopish", null).show()\n}\n\nprivate fun openBusinessInfoDialog() {\nAlertDialog.Builder(this).setTitle("🏪 Biznes ma'lumotlari")\n.setMessage("Do'kon: $storeName\nID: $storeId\nManzil: $storeAddress\nObuna: ${remainingDaysText()}")\n.setPositiveButton("Obunani uzaytirish") { _, _ -> showSubscriptionTariffsBottomSheet() }\n.setNegativeButton("Yopish", null).show()\n}\n\nprivate fun showDeveloperDialog() {\nAlertDialog.Builder(this).setTitle("👨‍💻 Dastur haqida")\n.setMessage("Ilova: QarzFy v11.0 (Glossy Glassmorphism)\nDasturchi: Hasan Jaylovov\nTelegram: @HasanJaylovov")\n.setPositiveButton("Bog'lanish") { _, _ ->\nstartActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/HasanJaylovov")))\n}.setNegativeButton("Yopish", null).show()\n}\n\nprivate fun sendBulkSmsReminders(isSupplier: Boolean) {\nvar sent = 0\ndb.getPersons(isSupplier).forEach { p ->\nif (p.balUzs != 0L) {\ntriggerBackgroundSmsAndVoiceCall(p.name, p.phone, Math.abs(p.balUzs), "Chiqim", "Qarz eslatmasi", p.dueDate, isSupplier)\nsent++\n}\n}\nToast.makeText(this, "📩 $sent ta qarzdor/ta'minotchiga SMS va Fonda Qo'ng'iroq yuborildi!", Toast.LENGTH_LONG).show()\n}\n}
+                ch == '"' -> inQuotes = !inQuotes
+                (ch == ',' || ch == ';') && !inQuotes -> {
+                    result.add(cur.toString())
+                    cur.clear()
+                }
+                else -> cur.append(ch)
+            }
+        }
+        result.add(cur.toString())
+        return result
+    }
+
+    // ==================== DIALOGLAR ====================
+    private fun buildEmployeesSection(): View {
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(Button(this).apply {
+            text = "+ Xodim qo'shish (Barchasi | Oylik | Kunlik)"
+            setTextColor(Color.WHITE); background = glossyPurpleGrad(32f)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 125).apply { bottomMargin = 18 }
+            setOnClickListener { openAddEmployeeDialog() }
+        })
+        val emps = db.getEmployees()
+        if (emps.isEmpty()) {
+            col.addView(TextView(this).apply {
+                text = "Xodimlar topilmadi"; gravity = Gravity.CENTER; setTextColor(Color.parseColor("#64748B"))
+                background = glossyCard("#FFFFFF", "#FFFFFF", 36f); setPadding(40, 60, 40, 60)
+            })
+        } else {
+            emps.forEach { (n, p) ->
+                col.addView(TextView(this).apply {
+                    text = "👨‍💼 $n  •  📞 $p"; setTextColor(Color.parseColor("#0F172A")); textSize = 15f
+                    background = glossyCard("#FFFFFF", "#FFFFFF", 32f); setPadding(32, 26, 32, 26)
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 12 }
+                })
+            }
+        }
+        return col
+    }
+
+    private fun openShoppingListDialog() {
+        val et = EditText(this).apply { hint = "Bozorlik ro'yxati" }
+        AlertDialog.Builder(this).setTitle("📋 Bozorlik").setView(et).setPositiveButton("Saqlash", null).show()
+    }
+
+    private fun openAddKassaDialog(type: String) {
+        val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(45, 25, 45, 10) }
+        val etCat = EditText(this).apply { hint = "Kategoriya (Savdo, Ijara)" }
+        val etAmt = EditText(this).apply { hint = "Summa (UZS)"; inputType = InputType.TYPE_CLASS_NUMBER }
+        val etNote = EditText(this).apply { hint = "Izoh" }
+        layout.addView(etCat); layout.addView(etAmt); layout.addView(etNote)
+        AlertDialog.Builder(this).setTitle("💵 Kassaga $type").setView(layout)
+            .setPositiveButton("Saqlash") { _, _ ->
+                val amt = cleanNumberInput(etAmt.text.toString())
+                if (amt > 0) {
+                    db.addKassa(type, etCat.text.toString().ifEmpty { "Umumiy" }, amt, "UZS", "Naqd", etNote.text.toString(), storeName)
+                    renderMainWorkspace()
+                }
+            }.setNegativeButton("Yopish", null).show()
+    }
+
+    private fun openAddProductDialog() {
+        val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(45, 25, 45, 10) }
+        val etName = EditText(this).apply { hint = "Mahsulot nomi *" }
+        val etQty = EditText(this).apply { hint = "Miqdor (dona)"; inputType = InputType.TYPE_CLASS_NUMBER; setText("1") }
+        val etCost = EditText(this).apply { hint = "Tan narx (10 000 UZS)"; inputType = InputType.TYPE_CLASS_NUMBER }
+        val etSale = EditText(this).apply { hint = "Sotuv narxi (12 000 UZS)"; inputType = InputType.TYPE_CLASS_NUMBER }
+        val etCode = EditText(this).apply { hint = "Shtrix-kod / Kodi" }
+        layout.addView(etName); layout.addView(etQty); layout.addView(etCost); layout.addView(etSale); layout.addView(etCode)
+        AlertDialog.Builder(this).setTitle("📦 Mahsulot yaratish / Kirim").setView(layout)
+            .setPositiveButton("Qo'shish") { _, _ ->
+                val n = etName.text.toString().trim()
+                if (n.isNotEmpty()) {
+                    db.addProduct(n, etCode.text.toString().ifEmpty { "BC-101" }, etQty.text.toString().toIntOrNull() ?: 1, "dona", cleanNumberInput(etCost.text.toString()), cleanNumberInput(etSale.text.toString()), "UZS", storeName)
+                    renderMainWorkspace()
+                }
+            }.setNegativeButton("Yopish", null).show()
+    }
+
+    private fun openAddEmployeeDialog() {
+        val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(45, 25, 45, 10) }
+        val etName = EditText(this).apply { hint = "Xodim ismi" }
+        val etPhone = EditText(this).apply { hint = "UZ Telefon"; setText("+998") }
+        layout.addView(etName); layout.addView(etPhone)
+        AlertDialog.Builder(this).setTitle("👨‍💼 Xodim qo'shish").setView(layout)
+            .setPositiveButton("Saqlash") { _, _ ->
+                if (etName.text.isNotEmpty()) { db.addEmployee(etName.text.toString(), etPhone.text.toString(), "Oylik"); renderMainWorkspace() }
+            }.setNegativeButton("Yopish", null).show()
+    }
+
+    private fun openCreateFolderDialog() {
+        val et = EditText(this).apply { hint = "Papka nomi" }
+        AlertDialog.Builder(this).setTitle("📁 Papka yaratish").setView(et).setPositiveButton("Saqlash", null).show()
+    }
+
+    private fun openSalesCalculatorDialog() {
+        val et = EditText(this).apply { hint = "Summa (UZS)"; inputType = InputType.TYPE_CLASS_NUMBER }
+        AlertDialog.Builder(this).setTitle("🧮 Sotuv kalkulyatori").setView(et)
+            .setPositiveButton("Kassaga Kirim") { _, _ ->
+                val v = cleanNumberInput(et.text.toString())
+                if (v > 0) { db.addKassa("Kirim", "Kalkulyator", v, "UZS", "Naqd", "", storeName); renderMainWorkspace() }
+            }.setNegativeButton("Yopish", null).show()
+    }
+
+
+    private fun autoLockLabel(ms: Long): String = when (ms) {
+        30_000L -> "30 sekund"
+        60_000L -> "1 minut"
+        300_000L -> "5 minut"
+        600_000L -> "10 minut"
+        3_600_000L -> "1 soat"
+        else -> "1 minut"
+    }
+
+    fun renderPinLockScreen(mode: String) {
+        try {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            currentFocus?.let { imm?.hideSoftInputFromWindow(it.windowToken, 0) }
+        } catch (_: Exception) {}
+
+        rootLayout.removeAllViews()
+        rootLayout.setBackgroundColor(Color.parseColor("#F5F7FF"))
+
+        var currentStep = mode
+        if (mode == "SETUP_NEW") currentStep = "SETUP_FIRST"
+
+        var firstEnteredPin = ""
+        var typedPin = ""
+
+        val mainCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(28, 36, 28, 32)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        val cardBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = glossyCard("#FFFFFF", "#E2E8F0", 38f)
+            elevation = 10f
+            setPadding(28, 34, 28, 34)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        val logo = ImageView(this).apply {
+            setImageResource(R.drawable.ic_qarzdaftar_logo)
+            layoutParams = LinearLayout.LayoutParams(82, 82).apply { bottomMargin = 12 }
+        }
+        cardBox.addView(logo)
+
+        val tvTitle = TextView(this).apply {
+            text = when (currentStep) {
+                "UNLOCK" -> "PIN-kodni kiriting"
+                "CHANGE_VERIFY_OLD" -> "Eski PIN-kodni kiriting"
+                else -> "Yangi 6 xonali PIN-kod"
+            }
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 17f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+        }
+        cardBox.addView(tvTitle)
+
+        val tvSub = TextView(this).apply {
+            text = when (currentStep) {
+                "UNLOCK" -> "Dasturga kirish uchun 6 xonali kodni tering"
+                "CHANGE_VERIFY_OLD" -> "O'zgartirish uchun amaldagi PIN-kodni tasdiqlang"
+                else -> "Xavfsizlik uchun 6 ta raqam tanlang"
+            }
+            setTextColor(Color.parseColor("#64748B"))
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setPadding(12, 6, 12, 24)
+        }
+        cardBox.addView(tvSub)
+
+        val dotsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 28 }
+        }
+        val dotViews = Array(6) {
+            View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(32, 32).apply { setMargins(12, 0, 12, 0) }
+                background = glossyRoundBtnBg("#F1F5F9", "#CBD5E1")
+                dotsRow.addView(this)
+            }
+        }
+        cardBox.addView(dotsRow)
+
+        fun updateDotsUI() {
+            for (i in 0 until 6) {
+                val filled = i < typedPin.length
+                dotViews[i].background = if (filled) {
+                    glossyRoundBtnBg("#5B4CFF", "#5B4CFF")
+                } else {
+                    glossyRoundBtnBg("#F1F5F9", "#CBD5E1")
+                }
+            }
+        }
+
+        fun handleSixDigitsCompleted(code: String) {
+            when (currentStep) {
+                "UNLOCK" -> {
+                    if (code == appPinCode) {
+                        isPinUnlockedThisSession = true
+                        lastInteractionTimeMs = System.currentTimeMillis()
+                        checkServerSubscriptionAndRender()
+                        scheduleMidnightAutoExcelSaveWithSignal()
+                        checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
+                    } else {
+                        Toast.makeText(this, "❌ PIN-kod noto'g'ri!", Toast.LENGTH_SHORT).show()
+                        typedPin = ""
+                        updateDotsUI()
+                    }
+                }
+                "CHANGE_VERIFY_OLD" -> {
+                    if (code == appPinCode) {
+                        currentStep = "SETUP_FIRST"
+                        typedPin = ""
+                        tvTitle.text = "Yangi 6 xonali PIN-kod"
+                        tvSub.text = "Endi yangi 6 xonali PIN-kodni tering"
+                        updateDotsUI()
+                    } else {
+                        Toast.makeText(this, "❌ Eski PIN-kod noto'g'ri!", Toast.LENGTH_SHORT).show()
+                        typedPin = ""
+                        updateDotsUI()
+                    }
+                }
+                "SETUP_FIRST" -> {
+                    firstEnteredPin = code
+                    currentStep = "SETUP_CONFIRM"
+                    typedPin = ""
+                    tvTitle.text = "PIN-kodni tasdiqlang"
+                    tvSub.text = "Yangi 6 xonali PIN-kodni qayta tering"
+                    updateDotsUI()
+                }
+                "SETUP_CONFIRM" -> {
+                    if (code == firstEnteredPin) {
+                        appPinCode = code
+                        isPinUnlockedThisSession = true
+                        lastInteractionTimeMs = System.currentTimeMillis()
+                        saveSessionSynchronously(true)
+                        Toast.makeText(this, "✅ PIN-kod saqlandi!", Toast.LENGTH_SHORT).show()
+                        checkServerSubscriptionAndRender()
+                        scheduleMidnightAutoExcelSaveWithSignal()
+                        checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
+                    } else {
+                        Toast.makeText(this, "❌ PIN-kodlar mos kelmadi!", Toast.LENGTH_SHORT).show()
+                        currentStep = "SETUP_FIRST"
+                        firstEnteredPin = ""
+                        typedPin = ""
+                        tvTitle.text = "Yangi 6 xonali PIN-kod"
+                        tvSub.text = "6 ta raqam tanlang"
+                        updateDotsUI()
+                    }
+                }
+            }
+        }
+
+        fun appendDigit(d: String) {
+            if (typedPin.length < 6) {
+                typedPin += d
+                updateDotsUI()
+                if (typedPin.length == 6) {
+                    handleSixDigitsCompleted(typedPin)
+                }
+            }
+        }
+
+        fun removeLastDigit() {
+            if (typedPin.isNotEmpty()) {
+                typedPin = typedPin.dropLast(1)
+                updateDotsUI()
+            }
+        }
+
+        val keypadGrid = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        val rows = listOf(
+            listOf("1", "2", "3"),
+            listOf("4", "5", "6"),
+            listOf("7", "8", "9"),
+            listOf("👆", "0", "⌫")
+        )
+
+        rows.forEach { r ->
+            val rLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = 14 }
+            }
+            r.forEach { keyLabel ->
+                val isBio = (keyLabel == "👆")
+                val btnKey = TextView(this).apply {
+                    text = keyLabel
+                    gravity = Gravity.CENTER
+                    setTextColor(if (isBio) Color.WHITE else Color.parseColor("#0F172A"))
+                    textSize = 15.5f
+                    setTypeface(null, Typeface.BOLD)
+                    background = if (isBio) glossyPurpleGrad(70f) else glossyRoundBtnBg("#F8FAFC", "#E2E8F0")
+                    elevation = 3f
+                    layoutParams = LinearLayout.LayoutParams(96, 96).apply { setMargins(16, 0, 16, 0) }
+                    setOnClickListener {
+                        when (keyLabel) {
+                            "⌫" -> removeLastDigit()
+                            "👆" -> {
+                                if (currentStep == "UNLOCK") {
+                                    triggerBiometricPromptForUnlock()
+                                } else {
+                                    Toast.makeText(this@MainActivity, "Avval 6 xonali PIN-kodni tering!", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            else -> appendDigit(keyLabel)
+                        }
+                    }
+                }
+                rLayout.addView(btnKey)
+            }
+            keypadGrid.addView(rLayout)
+        }
+        cardBox.addView(keypadGrid)
+
+        if (mode == "CHANGE_VERIFY_OLD") {
+            cardBox.addView(Button(this).apply {
+                text = "⬅ Bekor qilish"
+                setTextColor(Color.parseColor("#475569"))
+                textSize = 12.5f
+                background = glossyCard("#F1F5F9", "#CBD5E1", 22f)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, 90).apply { topMargin = 10 }
+                setPadding(32, 0, 32, 0)
+                setOnClickListener { renderMainWorkspace() }
+            })
+        }
+
+        mainCol.addView(cardBox)
+        val scroll = ScrollView(this).apply { addView(mainCol) }
+        rootLayout.addView(scroll)
+
+        if (currentStep == "UNLOCK" && isBiometricEnabled) {
+            mainCol.postDelayed({
+                triggerBiometricPromptForUnlock()
+            }, 300)
+        }
+    }
+
+    private fun triggerBiometricPromptForUnlock() {
+        try {
+            val biometricManager = BiometricManager.from(this)
+            val canAuth = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+            if (canAuth != BiometricManager.BIOMETRIC_SUCCESS) {
+                return
+            }
+
+            val executor = ContextCompat.getMainExecutor(this)
+            val biometricPrompt = BiometricPrompt(this, executor, object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    isPinUnlockedThisSession = true
+                    lastInteractionTimeMs = System.currentTimeMillis()
+                    Toast.makeText(this@MainActivity, "⚡ Biometrik tasdiqlandi!", Toast.LENGTH_SHORT).show()
+                    checkServerSubscriptionAndRender()
+                    scheduleMidnightAutoExcelSaveWithSignal()
+                    checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
+                }
+            })
+
+            val promptInfo = BiometricPrompt.PromptInfo.Builder()
+                .setTitle("QarzFy Neon Xavfsizlik")
+                .setSubtitle("Face ID yoki Barmoq izi orqali dasturni oching")
+                .setNegativeButtonText("PIN-kod terish")
+                .build()
+
+            biometricPrompt.authenticate(promptInfo)
+        } catch (_: Exception) {}
+    }
+
+    private fun showAutoLockTimerSelectionDialog() {
+        val options = arrayOf(
+            "⏱ 30 sekund",
+            "⏱ 1 minut",
+            "⏱ 5 minut",
+            "⏱ 10 minut",
+            "⏱ 1 soat"
+        )
+        val values = longArrayOf(
+            30_000L,
+            60_000L,
+            300_000L,
+            600_000L,
+            3_600_000L
+        )
+        val currentIdx = values.indexOf(autoLockTimeoutMs).let { if (it >= 0) it else 1 }
+
+        AlertDialog.Builder(this)
+            .setTitle("🔒 Avtomatik Qulflash Vaqti (Auto-Lock)")
+            .setSingleChoiceItems(options, currentIdx) { dialog, which ->
+                autoLockTimeoutMs = values[which]
+                saveSessionSynchronously(isLoggedIn)
+                Toast.makeText(this, "✅ Avtomatik qulflash: ${options[which]} ga belgilandi!", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+                showPinAndBiometricSettingsDialog()
+            }
+            .setNegativeButton("Yopish", null)
+            .show()
+    }
+
+    private fun showPinAndBiometricSettingsDialog() {
+        val sheet = BottomSheetDialog(this)
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = glossyCard("#131C31", "#00F5D4", 48f)
+            setPadding(42, 32, 42, 52)
+        }
+
+        wrap.addView(TextView(this).apply {
+            text = "🔐 PIN-kod, Biometrik va Avto-Lock"
+            setTextColor(Color.parseColor("#5B4CFF"))
+            textSize = 15.5f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 0, 0, 18)
+        })
+
+        val pinStatus = if (appPinCode.length == 6) "✅ O'rnatilgan (6 xonali)" else "🔴 O'rnatilmagan"
+        val bioStatus = if (isBiometricEnabled) "✅ Yoqilgan" else "🔴 O'chirilgan"
+        val lockTimeStr = autoLockLabel(autoLockTimeoutMs)
+
+        wrap.addView(TextView(this).apply {
+            text = "📌 PIN-kod: $pinStatus\n👆 Face ID / Barmoq izi: $bioStatus\n⏱ Avtomatik Lock vaqti: $lockTimeStr"
+            setTextColor(Color.parseColor("#1E293B"))
+            textSize = 13.5f
+            setPadding(0, 0, 0, 24)
+        })
+
+        wrap.addView(Button(this).apply {
+            text = "🔄 6 xonali PIN-kodni o'zgartirish (Eski PIN bilan)"
+            setTextColor(Color.WHITE)
+            background = glossyPurpleGrad(30f)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 92).apply { bottomMargin = 14 }
+            setOnClickListener {
+                sheet.dismiss()
+                if (appPinCode.length == 6) {
+                    renderPinLockScreen(mode = "CHANGE_VERIFY_OLD")
+                } else {
+                    renderPinLockScreen(mode = "SETUP_NEW")
+                }
+            }
+        })
+
+        wrap.addView(Button(this).apply {
+            text = "⏱ Avtomatik Lock vaqti: $lockTimeStr (O'zgartirish)"
+            setTextColor(Color.WHITE)
+            background = glossyOrangeGrad(30f)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 92).apply { bottomMargin = 14 }
+            setOnClickListener {
+                sheet.dismiss()
+                showAutoLockTimerSelectionDialog()
+            }
+        })
+
+        wrap.addView(Button(this).apply {
+            text = if (isBiometricEnabled) "👆 Face ID / Barmoq izini O'chirish" else "👆 Face ID / Barmoq izini Yoqish"
+            setTextColor(Color.parseColor("#5B4CFF"))
+            background = glossyCard("#1E293B", "#00F5D4", 30f)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 92)
+            setOnClickListener {
+                isBiometricEnabled = !isBiometricEnabled
+                saveSessionSynchronously(isLoggedIn)
+                sheet.dismiss()
+                Toast.makeText(this@MainActivity, if (isBiometricEnabled) "✅ Face ID / Barmoq izi yoqildi!" else "🔴 O'chirildi", Toast.LENGTH_SHORT).show()
+                showPinAndBiometricSettingsDialog()
+            }
+        })
+
+        sheet.setContentView(wrap)
+        sheet.show()
+    }
+
+    private fun showPushSettingsDialog() {
+        AlertDialog.Builder(this).setTitle("🔔 Avto-Save va Muddat Avto-SMS")
+            .setMessage("• Har bir kirim-chiqim va qarz yozilganda fayl avtomatik Download/QarzFy/QarzFy_AvtoBazasi.xlsx ga saqlanadi.\n• Qarz muddati kelganda xaridorlar va ta'minotchilarga avtomatik SMS yuboriladi.")
+            .setPositiveButton("Tushunarli", null).show()
+    }
+
+    private fun showVoiceSettingsDialog() {
+        val statusTxt = if (isAutoVoiceCallEnabled) "✅ Yoqilgan (Fonda ko'rinmas)" else "🔴 O'chirilgan"
+        AlertDialog.Builder(this)
+            .setTitle("📞 Fonda Avto-Qo'ng'iroq (Bot) Sozlamasi")
+            .setMessage("Holati: $statusTxt\n\nXaridorga yoki ta'minotchiga qarz yozilganda hamda muddati kelganda fonda SMS va ovozli xabar yuboriladi.")
+            .setPositiveButton(if (isAutoVoiceCallEnabled) "O'chirish" else "Yoqish") { _, _ ->
+                isAutoVoiceCallEnabled = !isAutoVoiceCallEnabled
+                saveSessionSynchronously(isLoggedIn)
+                renderMainWorkspace()
+            }
+            .setNeutralButton("🔊 Ovozni test qilish") { _, _ ->
+                ttsEngine?.speak("Assalomu alaykum! Hurmatli mijoz, do'konimizdan sizga qarz yozildi.", TextToSpeech.QUEUE_FLUSH, null, "test_voice")
+            }
+            .setNegativeButton("Yopish", null)
+            .show()
+    }
+
+    private fun showPrinterSettingsDialog() {
+        AlertDialog.Builder(this).setTitle("🖨 Printer sozlamalari").setMessage("Qog'oz eni: A4 / 80 mm / 58 mm. Bluetooth printer orqali chek chiqarish.").setPositiveButton("Test chek", null).show()
+    }
+
+    private fun showQrCodeAndOpenPageDialog() {
+        AlertDialog.Builder(this).setTitle("🔳 Mening QR-kodim va Ochiq sahifa")
+            .setMessage("Do'kon: $storeName\nHavola: $SERVER_URL/store/$storeId")
+            .setPositiveButton("Sahifani ochish") { _, _ ->
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$SERVER_URL/store/$storeId")))
+            }.setNegativeButton("Yopish", null).show()
+    }
+
+    private fun showCommunityAndAmbassadorDialog() {
+        AlertDialog.Builder(this).setTitle("🤝 Hamjamiyat va Vazifalar").setMessage("Storyga post joylang (+5000 UZS) va Ambassador dasturida qatnashing!").setPositiveButton("Yopish", null).show()
+    }
+
+    private fun openBusinessInfoDialog() {
+        AlertDialog.Builder(this).setTitle("🏪 Biznes ma'lumotlari")
+            .setMessage("Do'kon: $storeName\nID: $storeId\nManzil: $storeAddress\nObuna: ${remainingDaysText()}")
+            .setPositiveButton("Obunani uzaytirish") { _, _ -> showSubscriptionTariffsBottomSheet() }
+            .setNegativeButton("Yopish", null).show()
+    }
+
+    private fun showDeveloperDialog() {
+        AlertDialog.Builder(this).setTitle("👨‍💻 Dastur haqida")
+            .setMessage("Ilova: QarzFy v11.0 (Glossy Glassmorphism)\nDasturchi: Hasan Jaylovov\nTelegram: @HasanJaylovov")
+            .setPositiveButton("Bog'lanish") { _, _ ->
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/HasanJaylovov")))
+            }.setNegativeButton("Yopish", null).show()
+    }
+
+    private fun sendBulkSmsReminders(isSupplier: Boolean) {
+        var sent = 0
+        db.getPersons(isSupplier).forEach { p ->
+            if (p.balUzs != 0L) {
+                triggerBackgroundSmsAndVoiceCall(p.name, p.phone, Math.abs(p.balUzs), "Chiqim", "Qarz eslatmasi", p.dueDate, isSupplier)
+                sent++
+            }
+        }
+        Toast.makeText(this, "📩 $sent ta qarzdor/ta'minotchiga SMS va Fonda Qo'ng'iroq yuborildi!", Toast.LENGTH_LONG).show()
+    }
+}
