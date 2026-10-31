@@ -2074,7 +2074,7 @@ class MainActivity : AppCompatActivity() {
                     setTypeface(null, Typeface.BOLD)
                 })
                 mid.addView(TextView(this).apply {
-                    text = "${tx.personName} • ${formatMoney(tx.amount, \"so'm\")}\n${tx.date}"
+                    text = "${tx.personName} • ${formatMoney(tx.amount, "so'm")}\n${tx.date}"
                     setTextColor(Color.parseColor("#64748B"))
                     textSize = 12f
                 })
@@ -3171,7 +3171,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 0, 0, 6)
         })
         catInfo.addView(TextView(this).apply {
-            text = "🟢 Kirim balansi: ${formatMoney(jamiKirim, \"so'm\")}\n🔴 Qolgan qarz: ${formatMoney(jamiQarz, \"so'm\")}\n👥 Ro'yxat soni: ${persons.size} ta"
+            text = "🟢 Kirim balansi: ${formatMoney(jamiKirim, "so'm")}\n🔴 Qolgan qarz: ${formatMoney(jamiQarz, "so'm")}\n👥 Ro'yxat soni: ${persons.size} ta"
             setTextColor(Color.parseColor("#475569"))
             textSize = 12f
         })
