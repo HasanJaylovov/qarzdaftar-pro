@@ -344,7 +344,7 @@ class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_m
         if (c.moveToFirst()) {
             val clientId = c.getInt(0)
             val balUzs = c.getLong(1)
-            val balUsd = c.getLong(2)
+            val balUsd = c.getDouble(2).toLong()
             if (targetCurrency == "UZS") {
                 clearedUzs = Math.abs(balUzs)
                 db.execSQL("UPDATE clients SET bal_uzs = 0 WHERE id = ?", arrayOf<Any>(clientId))
@@ -485,6 +485,10 @@ class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_m
         }
         c.close()
         return list
+    }
+
+    fun getAllTransactionsBoth(): List<TxRec> {
+        return getTransactions(false) + getTransactions(true)
     }
 
     fun getTransactions(isSupplier: Boolean): List<TxRec> {
@@ -981,7 +985,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val remUzs = if ((personRecord?.balUzs ?: 0L) < 0L) Math.abs(personRecord?.balUzs ?: 0L) else 0L
-        val remUsd = if ((personRecord?.balUsd ?: 0L) < 0L) Math.abs(personRecord?.balUsd ?: 0L) else 0L
+        val remUsd = if ((personRecord?.balUsd ?: 0.0) < 0.0) Math.abs((personRecord?.balUsd ?: 0.0).toLong()) else 0L
 
         val curUnit = if (currency == "USD") "USD ($)" else "so'm"
         val fmtAmt = formatMoney(Math.abs(amount), curUnit)
@@ -2514,7 +2518,7 @@ class MainActivity : AppCompatActivity() {
 
         fun confirmAndClearAllDebts() {
             val curUzsAbs = Math.abs(client.balUzs)
-            val curUsdAbs = Math.abs(client.balUsd)
+            val curUsdAbs = Math.abs(client.balUsd.toLong())
             val msgSummary = "UZS qarz: ${formatMoney(curUzsAbs, "UZS")} | USD qarz: ${formatMoney(curUsdAbs, "USD")}"
             AlertDialog.Builder(this)
                 .setTitle("🗑 Barcha qarzni to'liq yopish / o'chirish")
@@ -2579,7 +2583,7 @@ class MainActivity : AppCompatActivity() {
 
         topBar.addView(topCircleIcon("✋", "#FEF3C7", "#D97706") {
             val remUzs = Math.abs(client.balUzs)
-            val remUsd = Math.abs(client.balUsd)
+            val remUsd = Math.abs(client.balUsd.toLong())
             val msg = "Hurmatli ${client.name}, $storeName do'konida qolgan qarzingiz: ${formatMoney(remUzs, "so'm")}${if (remUsd > 0) " va ${formatMoney(remUsd, "USD")}" else ""}. Muddat: ${client.dueDate}."
             sendAutoSms(client.phone, msg)
             Toast.makeText(this, "✋ Mijozga qarz eslatmasi SMS qilib yuborildi!", Toast.LENGTH_SHORT).show()
@@ -2587,7 +2591,7 @@ class MainActivity : AppCompatActivity() {
         topBar.addView(topCircleIcon("🏁", "#EDE9FE", "#6C4CF1") {
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
-                putExtra(Intent.EXTRA_TEXT, "📊 ${client.name} hisob-kitob kartasi\nDo'kon: $storeName\nUZS Balans: ${formatMoney(client.balUzs, "UZS")}\nUSD Balans: ${formatMoney(client.balUsd, "USD")}")
+                putExtra(Intent.EXTRA_TEXT, "📊 ${client.name} hisob-kitob kartasi\nDo'kon: $storeName\nUZS Balans: ${formatMoney(client.balUzs, "UZS")}\nUSD Balans: ${formatMoney(client.balUsd.toLong(), "USD")}")
             }
             startActivity(Intent.createChooser(shareIntent, "Mijoz hisobini ulashish"))
         })
@@ -2690,7 +2694,7 @@ class MainActivity : AppCompatActivity() {
         })
         actionCirclesRow.addView(contactCircle("💬", "#F97316") {
             val remUzs = Math.abs(client.balUzs)
-            val remUsd = Math.abs(client.balUsd)
+            val remUsd = Math.abs(client.balUsd.toLong())
             val msg = "Hurmatli ${client.name}, $storeName do'konida qolgan umumiy qarzingiz: ${formatMoney(remUzs, "so'm")}${if (remUsd > 0) " va ${formatMoney(remUsd, "USD")}" else ""}."
             sendAutoSms(client.phone, msg)
             Toast.makeText(this, "📩 SMS yuborildi!", Toast.LENGTH_SHORT).show()
@@ -2895,7 +2899,7 @@ class MainActivity : AppCompatActivity() {
             setTypeface(null, Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
-        val activeBalVal = if (personSelectedCurrency == "USD") client.balUsd else client.balUzs
+        val activeBalVal: Long = if (personSelectedCurrency == "USD") client.balUsd.toLong() else client.balUzs
         balRow.addView(TextView(this).apply {
             text = "${formatMoney(activeBalVal, personSelectedCurrency)}"
             setTextColor(if (activeBalVal < 0) Color.parseColor("#B91C1C") else Color.parseColor("#16A34A"))
@@ -3534,7 +3538,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val qarzUzs = persons.filter { it.balUzs < 0 }.sumOf { Math.abs(it.balUzs) }
-        val qarzUsd = persons.filter { it.balUsd < 0 }.sumOf { Math.abs(it.balUsd) }
+        val qarzUsd = persons.filter { it.balUsd < 0.0 }.sumOf { Math.abs(it.balUsd.toLong()) }
 
         val activeKirim = if (statSelectedCurrency == "USD") kirimUsd else kirimUzs
         val activeChiqim = if (statSelectedCurrency == "USD") chiqimUsd else chiqimUzs
@@ -3935,10 +3939,10 @@ class MainActivity : AppCompatActivity() {
         rows.add(listOf("=== 1. MIJOZLAR VA TA'MINOTCHILAR RO'YXATI (UZS VA USD BALANS) ===", "", "", "", "", "", "", ""))
         rows.add(listOf("Turi", "Ism Familiya", "Telefon", "UZS Balans (So'm)", "USD Balans ($)", "To'lov Muddati", "Qo'shilgan Sana", "Holati"))
         clients.forEach { c ->
-            rows.add(listOf("Mijoz", c.name, c.phone, c.balUzs.toString(), c.balUsd.toString(), c.dueDate, c.createdAt, if (c.balUzs < 0 || c.balUsd < 0) "Qarzdor" else "Toza"))
+            rows.add(listOf("Mijoz", c.name, c.phone, c.balUzs.toString(), c.balUsd.toLong().toString(), c.dueDate, c.createdAt, if (c.balUzs < 0 || c.balUsd < 0.0) "Qarzdor" else "Toza"))
         }
         suppliers.forEach { s ->
-            rows.add(listOf("Ta'minotchi", s.name, s.phone, s.balUzs.toString(), s.balUsd.toString(), s.dueDate, s.createdAt, if (s.balUzs < 0 || s.balUsd < 0) "Qarzdor" else "Toza"))
+            rows.add(listOf("Ta'minotchi", s.name, s.phone, s.balUzs.toString(), s.balUsd.toLong().toString(), s.dueDate, s.createdAt, if (s.balUzs < 0 || s.balUsd < 0.0) "Qarzdor" else "Toza"))
         }
         rows.add(listOf("", "", "", "", "", "", "", ""))
 
@@ -4285,7 +4289,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 0, 0, 6)
         })
         wrap.addView(TextView(this).apply {
-            text = "Joriy balans: ${formatMoney(client.balUzs, "UZS")}  |  ${formatMoney(client.balUsd, "USD")}"
+            text = "Joriy balans: ${formatMoney(client.balUzs, "UZS")}  |  ${formatMoney(client.balUsd.toLong(), "USD")}"
             setTextColor(Color.parseColor("#64748B"))
             textSize = 12.5f
             setPadding(0, 0, 0, 14)
@@ -4382,6 +4386,138 @@ class MainActivity : AppCompatActivity() {
                 val (file, _, shareUri) = saveRealXlsxAndGetShareableUri()
                 shareExcelUriToTelegramOrBluetooth(shareUri, file.name)
             }
+        })
+        sheet.setContentView(wrap)
+        sheet.show()
+    }
+
+
+    private fun makeCalendarInput(hintText: String, initialValue: String = ""): EditText {
+        return EditText(this).apply {
+            hint = hintText
+            setText(initialValue)
+            isFocusable = false
+            isClickable = true
+            setTextColor(Color.parseColor("#0F172A"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+            textSize = 14f
+            background = glossyCard("#F5F7FF", "#E2E8F8", 24f)
+            setPadding(28, 22, 28, 22)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 12 }
+            setOnClickListener {
+                val cal = Calendar.getInstance()
+                android.app.DatePickerDialog(
+                    this@MainActivity,
+                    { _, year, month, dayOfMonth ->
+                        val formatted = String.format(Locale.getDefault(), "%02d.%02d.%04d", dayOfMonth, month + 1, year)
+                        setText(formatted)
+                    },
+                    cal.get(Calendar.YEAR),
+                    cal.get(Calendar.MONTH),
+                    cal.get(Calendar.DAY_OF_MONTH)
+                ).show()
+            }
+        }
+    }
+
+    private fun triggerAutoExportSignalAndNotification(savedPath: String) {
+        try {
+            val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
+            toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 220)
+        } catch (_: Exception) {}
+        try {
+            val chId = "qarzfy_export_channel"
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val ch = NotificationChannel(chId, "QarzFy Excel Avto-Eksport", NotificationManager.IMPORTANCE_DEFAULT)
+                nm.createNotificationChannel(ch)
+            }
+            val notif = NotificationCompat.Builder(this@MainActivity, chId)
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setContentTitle("📊 QarzDaftar Pro — Excel Saqlandi")
+                .setContentText(savedPath)
+                .setAutoCancel(true)
+                .build()
+            nm.notify(9019, notif)
+        } catch (_: Exception) {}
+    }
+
+    private fun showSubscriptionTariffsBottomSheet() {
+        val sheet = BottomSheetDialog(this)
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            background = glossyCard("#F5F7FF", "#E2E8F8", 44f)
+            setPadding(32, 28, 32, 48)
+        }
+        wrap.addView(TextView(this).apply {
+            text = "Premium"
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 21f
+            setTypeface(null, Typeface.BOLD)
+        })
+        wrap.addView(TextView(this).apply {
+            text = "Barcha imkoniyatlar ochiq • ${remainingDaysText()}"
+            setTextColor(Color.parseColor("#64748B"))
+            textSize = 12.5f
+            setPadding(0, 4, 0, 18)
+        })
+        wrap.addView(TextView(this).apply {
+            text = "👑"
+            gravity = Gravity.CENTER
+            textSize = 36f
+            background = glossyPurpleGrad(65f)
+            elevation = 10f
+            layoutParams = LinearLayout.LayoutParams(130, 130).apply { bottomMargin = 18 }
+        })
+        val feats = listOf(
+            "☑️  Cheksiz qarzlar (UZS va USD)",
+            "☑️  To'liq statistika va Excel avto-eksport",
+            "☑️  Ma'lumotlar zaxirasi (Download/QarzFy)",
+            "☑️  Avto-SMS va Fonda Ovozli Bot"
+        )
+        feats.forEach { ft ->
+            wrap.addView(TextView(this).apply {
+                text = ft
+                setTextColor(Color.parseColor("#1E293B"))
+                textSize = 13f
+                setTypeface(null, Typeface.BOLD)
+                setPadding(12, 6, 12, 6)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            })
+        }
+        wrap.addView(TextView(this).apply {
+            text = "💎  1 Oy — 49 000 so'm"
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            textSize = 14.5f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyPurpleGrad(36f)
+            setPadding(24, 24, 24, 24)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 18; bottomMargin = 10 }
+            setOnClickListener { sheet.dismiss(); selectTariffAndPayDialog(1, 49000L) }
+        })
+        wrap.addView(TextView(this).apply {
+            text = "🔥  3 Oy — 119 000 so'm"
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            textSize = 14.5f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyOrangeGrad(36f)
+            setPadding(24, 24, 24, 24)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 10 }
+            setOnClickListener { sheet.dismiss(); selectTariffAndPayDialog(3, 119000L) }
+        })
+        wrap.addView(TextView(this).apply {
+            text = "👑  6 Oy — 199 000 so'm"
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            textSize = 14.5f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyGreenGrad(36f)
+            setPadding(24, 24, 24, 24)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            setOnClickListener { sheet.dismiss(); selectTariffAndPayDialog(6, 199000L) }
         })
         sheet.setContentView(wrap)
         sheet.show()
