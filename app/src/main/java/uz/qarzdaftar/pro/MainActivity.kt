@@ -349,6 +349,20 @@ class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_m
         onDataChangedCallback?.invoke()
     }
 
+    fun deletePersonFromRegistryCompletely(personName: String, isSupplier: Boolean) {
+        val db = writableDatabase
+        val supFlag = if (isSupplier) 1 else 0
+        db.execSQL(
+            "DELETE FROM transactions WHERE person_name = ? AND is_supplier = ?",
+            arrayOf<Any>(personName, supFlag)
+        )
+        db.execSQL(
+            "DELETE FROM clients WHERE name = ? AND is_supplier = ?",
+            arrayOf<Any>(personName, supFlag)
+        )
+        onDataChangedCallback?.invoke()
+    }
+
     fun wipePersonHistoryCompletely(personName: String, isSupplier: Boolean) {
         val db = writableDatabase
         val supFlag = if (isSupplier) 1 else 0
@@ -3270,6 +3284,19 @@ class MainActivity : AppCompatActivity() {
                     val freshClient = db.getPersonByName(client.name, isSupplier)
                     if (freshClient != null) showPersonFullHistoryAndActionSheet(freshClient, isSupplier)
                 }
+                .setNeutralButton("❌ Ro'yxatdan butunlay o'chirish") { _, _ ->
+                    AlertDialog.Builder(this)
+                        .setTitle("⚠️ Umumiy ro'yxatdan o'chirish")
+                        .setMessage("${client.name} umumiy ro'yxatdan va bazadan butunlay o'chirib tashlansinmi?")
+                        .setPositiveButton("❌ Ha, ro'yxatdan o'chirilsin") { _, _ ->
+                            db.deletePersonFromRegistryCompletely(client.name, isSupplier)
+                            Toast.makeText(this, "🗑 ${client.name} umumiy ro'yxatdan butunlay o'chirildi!", Toast.LENGTH_LONG).show()
+                            dialog.dismiss()
+                            renderMainWorkspace()
+                        }
+                        .setNegativeButton("Yo'q", null)
+                        .show()
+                }
                 .setNegativeButton("Bekor qilish", null)
                 .show()
         }
@@ -3847,6 +3874,35 @@ class MainActivity : AppCompatActivity() {
                 wrap.addView(txCard)
             }
         }
+
+        // Mijozni umumiy ro'yxatdan butunlay o'chirish tugmasi
+        wrap.addView(TextView(this).apply {
+            text = "❌  Mijozni umumiy ro'yxatdan butunlay o'chirish"
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#DC2626"))
+            textSize = 13.5f
+            setTypeface(null, Typeface.BOLD)
+            background = GradientDrawable().apply {
+                cornerRadius = 28f
+                setColor(Color.parseColor("#FFF5F5"))
+                setStroke(2, Color.parseColor("#FECACA"))
+            }
+            setPadding(24, 24, 24, 24)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 20 }
+            setOnClickListener {
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("⚠️ Umumiy ro'yxatdan o'chirish")
+                    .setMessage("${client.name} va uning barcha ma'lumotlari umumiy ro'yxatdan butunlay o'chirib tashlansinmi?")
+                    .setPositiveButton("❌ Ha, butunlay o'chirilsin") { _, _ ->
+                        db.deletePersonFromRegistryCompletely(client.name, isSupplier)
+                        Toast.makeText(this@MainActivity, "🗑 ${client.name} umumiy ro'yxatdan butunlay o'chirildi!", Toast.LENGTH_LONG).show()
+                        dialog.dismiss()
+                        renderMainWorkspace()
+                    }
+                    .setNegativeButton("Bekor qilish", null)
+                    .show()
+            }
+        })
 
         scroll.addView(wrap)
         rootFrame.addView(scroll)
