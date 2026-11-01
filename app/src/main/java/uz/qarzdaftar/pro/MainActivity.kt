@@ -789,6 +789,8 @@ class MainActivity : AppCompatActivity() {
         subscriptionExpiryMillis = prefs.getLong("sub_expiry_millis", 0L)
         isAutoVoiceCallEnabled = prefs.getBoolean("auto_voice_call", true)
         appPinCode = prefs.getString("app_pin_code", "") ?: ""
+        appPatternCode = prefs.getString("app_pattern_code", "") ?: ""
+        lockAuthType = prefs.getString("lock_auth_type", "PIN") ?: "PIN" 
         isBiometricEnabled = prefs.getBoolean("biometric_enabled", true)
         autoLockTimeoutMs = prefs.getLong("auto_lock_timeout_ms", 60_000L)
         price1Month = prefs.getLong("price_1m", 49000L)

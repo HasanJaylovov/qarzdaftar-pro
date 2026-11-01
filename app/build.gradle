@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 206
-        versionName "20.6-MultiSheetExcelExport"
+        versionCode 207
+        versionName "20.7-FullScreenPinAndPatternLock"
     }
 
     buildTypes {
