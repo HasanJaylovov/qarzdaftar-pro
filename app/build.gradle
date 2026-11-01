@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 200
-        versionName "20.0-FullClientSuiteAndSort"
+        versionCode 201
+        versionName "20.1-FixNoteAndBot"
     }
 
     buildTypes {

@@ -3047,7 +3047,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(22, 18, 22, 18)
         }
         botBox.addView(TextView(this).apply {
-            text = "ⓘ Qarzdorga Telegram-Bot orqali xabar yuborish uchun, u botda ro'yxatdan o'tgan bo'lishi kerak"
+            text = "ⓘ Mijozlarga avtomatik xabar va eslatmalar yuborish uchun maxsus botimiz:"
             setTextColor(Color.parseColor("#0369A1"))
             textSize = 11.5f
             setPadding(0, 0, 0, 12)
@@ -3057,7 +3057,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         botShareRow.addView(TextView(this).apply {
-            text = "@pDaftarClientBot"
+            text = "@QarzFyBot"
             setTextColor(Color.parseColor("#0284C7"))
             textSize = 14f
             setTypeface(null, Typeface.BOLD)
@@ -3824,17 +3824,23 @@ class MainActivity : AppCompatActivity() {
                 }
                 txCard.addView(topTxRow)
 
+                // Mijoz olgan narsasi (izohi), vaqti va berishi kerak bo'lgan muddati alohida aniq ko'rinadi
+                val itemNote = tx.note.ifEmpty { "Oddiy xarid" }
+                val dueDisplay = if (tx.dueDate.isNotBlank() && tx.dueDate != "Bugun") "  |  ⏳ Muddat: ${tx.dueDate}" else ""
+                
                 txCard.addView(TextView(this).apply {
-                    text = "${daysAgoText(tx.date)} • 📦 Mahsulot/Izoh: ${tx.note.ifEmpty { personModeTab }}"
-                    setTextColor(Color.parseColor("#334155"))
-                    textSize = 12.5f
-                    setPadding(0, 6, 0, 6)
+                    text = "🛒 Olgan narsasi (Izoh): $itemNote"
+                    setTextColor(Color.parseColor("#0F172A"))
+                    textSize = 13.5f
+                    setTypeface(null, Typeface.BOLD)
+                    setPadding(0, 4, 0, 4)
                 })
 
                 txCard.addView(TextView(this).apply {
-                    text = "${tx.date}   👤 $storeName"
+                    text = "🕒 Vaqti: ${tx.date}$dueDisplay"
                     setTextColor(Color.parseColor("#475569"))
                     textSize = 12f
+                    setPadding(0, 2, 0, 6)
                 })
 
                 wrap.addView(txCard)
