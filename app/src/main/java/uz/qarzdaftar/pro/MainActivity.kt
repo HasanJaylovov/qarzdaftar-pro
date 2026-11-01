@@ -2776,10 +2776,10 @@ class MainActivity : AppCompatActivity() {
 
         // Haqiqiy chizilgan QR-kod Bitmap
         val qrSize = 520
-        val bmp = Bitmap.createBitmap(qrSize, qrSize, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bmp)
+        val bmp = android.graphics.Bitmap.createBitmap(qrSize, qrSize, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bmp)
         canvas.drawColor(Color.WHITE)
-        val paint = Paint().apply { color = Color.BLACK; style = Paint.Style.FILL }
+        val paint = android.graphics.Paint().apply { color = Color.BLACK; style = android.graphics.Paint.Style.FILL }
         val grid = 21
         val cell = qrSize / (grid + 4)
         val offset = cell * 2
@@ -3215,7 +3215,7 @@ class MainActivity : AppCompatActivity() {
 
                 Toast.makeText(this@MainActivity, "✅ Mijoz ma'lumotlari saqlandi va $newPh raqamiga SMS yuborildi!", Toast.LENGTH_LONG).show()
                 sheet.dismiss()
-                val updated = db.getPersonByName(newNm, isSupplier) ?: ClientRec(client.id, newNm, newPh, client.balUsd, client.balUzs, client.dueDate, client.createdAt, isSupplier)
+                val updated = db.getPersonByName(newNm, isSupplier) ?: ClientRec(client.id, newNm, newPh, client.balUsd, client.balUzs, client.dueDate, isSupplier, client.createdAt)
                 onSaved(updated)
             }
         })
