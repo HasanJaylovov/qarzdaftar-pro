@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 201
-        versionName "20.1-FixNoteAndBot"
+        versionCode 202
+        versionName "20.2-FullCalcAndTelegram"
     }
 
     buildTypes {
