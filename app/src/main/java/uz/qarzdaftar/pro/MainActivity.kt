@@ -3215,7 +3215,7 @@ class MainActivity : AppCompatActivity() {
 
                 Toast.makeText(this@MainActivity, "✅ Mijoz ma'lumotlari saqlandi va $newPh raqamiga SMS yuborildi!", Toast.LENGTH_LONG).show()
                 sheet.dismiss()
-                val updated = db.getPersonByName(newNm, isSupplier) ?: ClientRec(client.id, newNm, newPh, client.balUsd, client.balUzs, client.dueDate, isSupplier, client.createdAt)
+                val updated = db.getPersonByName(newNm, isSupplier) ?: client.copy(name = newNm, phone = newPh)
                 onSaved(updated)
             }
         })
