@@ -3548,12 +3548,12 @@ class MainActivity : AppCompatActivity() {
         }
         wrap.addView(modePillsRow)
 
-        // 6. SORTIROVKA QATORI (6-rasmda ko'rsatilganidek: [ 🕒 Faol | ⚠️ Muddat | 💳 Summa ↓ | 🔍 | A-Z | ▽ ])
+        // 6. SANA/VAQT VA SUMMA BO'YICHA MUKAMMAL SORTIROVKA QATORI
         val innerSortBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             background = glossyCard("#FFFFFF", "#E2E8F8", 26f)
-            setPadding(10, 8, 10, 8)
+            setPadding(8, 8, 8, 8)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 12 }
         }
         fun innerSortChip(lbl: String, modeKey: String): View {
@@ -3566,10 +3566,10 @@ class MainActivity : AppCompatActivity() {
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(if (active) Color.parseColor("#5946E8") else Color.parseColor("#1E293B"))
                 background = if (active) GradientDrawable().apply {
-                    cornerRadius = 20f
+                    cornerRadius = 18f
                     setColor(Color.parseColor("#EDE9FE"))
                 } else null
-                setPadding(14, 12, 14, 12)
+                setPadding(12, 10, 12, 10)
                 setOnClickListener {
                     currentSortMode = modeKey
                     dialog.dismiss()
@@ -3577,43 +3577,26 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        innerSortBar.addView(innerSortChip("🕒 Faol", "Faol"))
-        innerSortBar.addView(innerSortChip("⚠️ Muddat", "Muddat"))
+        innerSortBar.addView(innerSortChip("📅 Yangi", "Faol"))
+        innerSortBar.addView(innerSortChip("📅 Eski", "Muddat"))
         innerSortBar.addView(innerSortChip("💳 Summa ↓", "Summa"))
+        innerSortBar.addView(innerSortChip("💳 Summa ↑", "SummaAsc"))
         innerSortBar.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f) })
-        innerSortBar.addView(TextView(this).apply {
-            text = "🔍"
-            textSize = 13.5f
-            setPadding(12, 10, 12, 10)
-            setOnClickListener {
-                Toast.makeText(this@MainActivity, "Tranzaksiyalar saralandi: $currentSortMode", Toast.LENGTH_SHORT).show()
-            }
-        })
-        innerSortBar.addView(TextView(this).apply {
-            text = "A-Z"
-            gravity = Gravity.CENTER
-            textSize = 11f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(if (currentSortMode == "A-Z") Color.WHITE else Color.parseColor("#0F172A"))
-            background = if (currentSortMode == "A-Z") glossyPurpleGrad(18f) else glossyCard("#FFFFFF", "#CBD5E1", 18f)
-            setPadding(16, 10, 16, 10)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { leftMargin = 4; rightMargin = 6 }
-            setOnClickListener {
-                currentSortMode = "A-Z"
-                dialog.dismiss()
-                showPersonFullHistoryAndActionSheet(client, isSupplier)
-            }
-        })
         innerSortBar.addView(TextView(this).apply {
             text = "▽"
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            textSize = 13.5f
+            textSize = 13f
             setTypeface(null, Typeface.BOLD)
             background = glossyPurpleGrad(18f)
-            layoutParams = LinearLayout.LayoutParams(68, 68)
+            layoutParams = LinearLayout.LayoutParams(64, 64)
             setOnClickListener {
-                currentSortMode = if (currentSortMode == "Summa") "Faol" else "Summa"
+                currentSortMode = when (currentSortMode) {
+                    "Faol" -> "Muddat"
+                    "Muddat" -> "Summa"
+                    "Summa" -> "SummaAsc"
+                    else -> "Faol"
+                }
                 dialog.dismiss()
                 showPersonFullHistoryAndActionSheet(client, isSupplier)
             }
@@ -3784,9 +3767,9 @@ class MainActivity : AppCompatActivity() {
         val rawFiltered = allPersonTxs.filter { it.currency.equals(personSelectedCurrency, ignoreCase = true) }
         val filteredTxs = when (currentSortMode) {
             "Summa" -> rawFiltered.sortedByDescending { Math.abs(it.amount) }
-            "Muddat" -> rawFiltered.sortedBy { if (it.dueDate.isBlank()) "9999" else it.dueDate }
-            "A-Z" -> rawFiltered.sortedBy { it.note.lowercase() }
-            else -> rawFiltered
+            "SummaAsc" -> rawFiltered.sortedBy { Math.abs(it.amount) }
+            "Muddat" -> rawFiltered.sortedBy { it.date } // Eski -> Yangi (Sana bo'yicha)
+            else -> rawFiltered.sortedByDescending { it.date } // Yangi -> Eski (Sana bo'yicha)
         }
 
         if (filteredTxs.isEmpty()) {
