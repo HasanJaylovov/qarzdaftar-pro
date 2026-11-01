@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 203
-        versionName "20.3-AdaptivePinAndFingerprint"
+        versionCode 204
+        versionName "20.4-InstantAutoSaveExcel"
     }
 
     buildTypes {

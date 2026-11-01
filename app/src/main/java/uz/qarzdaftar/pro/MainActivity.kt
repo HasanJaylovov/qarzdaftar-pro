@@ -684,6 +684,7 @@ class MainActivity : AppCompatActivity() {
         db = QarzFyDatabase(this)
 
         db.onDataChangedCallback = {
+            try { savePermanentBackupToDownloadsQarzFy() } catch (_: Exception) {}
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     savePermanentBackupToDownloadsQarzFy()
