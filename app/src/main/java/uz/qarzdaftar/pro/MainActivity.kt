@@ -641,6 +641,10 @@ class MainActivity : AppCompatActivity() {
     private var subscriptionExpiryMillis = 0L
     private var isAutoVoiceCallEnabled = true
     private var appPinCode = ""
+    private var tempPinBuffer = ""
+    private var appPatternCode = ""
+    private var tempPatternBuffer = ""
+    private var lockAuthType = "PIN"
     private var isBiometricEnabled = true
     private var isPinUnlockedThisSession = false
     private var autoLockTimeoutMs = 60_000L
