@@ -4730,59 +4730,87 @@ class MainActivity : AppCompatActivity() {
     private fun generateRealXlsxZipBytes(): ByteArray {
         val clients = db.getPersons(false)
         val suppliers = db.getPersons(true)
-        val allTxs = db.getAllTransactionsBoth()
+        val clientTxs = db.getTransactions(false)
+        val supplierTxs = db.getTransactions(true)
         val kassaList = db.getKassaList()
-        val products = db.getProducts()
+        val nowTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
 
-        val rows = mutableListOf<List<String>>()
-        rows.add(listOf("QARZDAFTAR PRO — RASMIY AVTO-SAVE BAZASI ($storeName - ID: $storeId)", "", "", "", "", "", "", ""))
-        rows.add(listOf("Saqlangan vaqti:", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()), "Telefon:", userPhone, "Manzil:", storeAddress, "", ""))
-        rows.add(listOf("", "", "", "", "", "", "", ""))
-
-        // 1-JADVAL: MIJOZLAR VA TA'MINOTCHILAR BALANSI (UZS VA USD)
-        rows.add(listOf("=== 1. MIJOZLAR VA TA'MINOTCHILAR RO'YXATI (UZS VA USD BALANS) ===", "", "", "", "", "", "", ""))
-        rows.add(listOf("Turi", "Ism Familiya", "Telefon", "UZS Balans (So'm)", "USD Balans ($)", "To'lov Muddati", "Qo'shilgan Sana", "Holati"))
+        // 1-SAHIFA: Mijozlar
+        val sheet1Rows = mutableListOf<List<String>>()
+        sheet1Rows.add(listOf("MIJOZLAR RO'YXATI ($storeName)", "Vaqt: $nowTime", "", "", "", "", ""))
+        sheet1Rows.add(listOf("ID", "Mijoz Ismi", "Telefon", "UZS Balans (So'm)", "USD Balans ($)", "To'lov Muddati", "Holati"))
         clients.forEach { c ->
-            rows.add(listOf("Mijoz", c.name, c.phone, c.balUzs.toString(), c.balUsd.toLong().toString(), c.dueDate, c.createdAt, if (c.balUzs < 0 || c.balUsd < 0.0) "Qarzdor" else "Toza"))
+            val st = if (c.balUzs < 0 || c.balUsd < 0.0) "Qarzdor" else "Toza"
+            sheet1Rows.add(listOf(c.id.toString(), c.name, c.phone, c.balUzs.toString(), c.balUsd.toLong().toString(), c.dueDate, st))
         }
+
+        // 2-SAHIFA: Tranzaksiyalar (Mijozlar)
+        val sheet2Rows = mutableListOf<List<String>>()
+        sheet2Rows.add(listOf("MIJOZ TRANZAKSIYALARI TARIXI", "Vaqt: $nowTime", "", "", "", "", "", "", ""))
+        sheet2Rows.add(listOf("Tranzaksiya ID", "Turi (Kirim/Chiqim)", "Mijoz Ismi", "Telefon", "Summa", "Valyuta", "Olgan narsasi (Izoh)", "Sana va Vaqt", "Muddat / Holat"))
+        clientTxs.forEach { tx ->
+            sheet2Rows.add(listOf(tx.txId, tx.kind, tx.personName, tx.personPhone, tx.amount.toString(), tx.currency, tx.note.ifEmpty { "Izohsiz" }, tx.date, "Muddat: ${tx.dueDate.ifEmpty { "Yo'q" }} | ${tx.status}"))
+        }
+
+        // 3-SAHIFA: Taminotchilar
+        val sheet3Rows = mutableListOf<List<String>>()
+        sheet3Rows.add(listOf("TA'MINOTCHILAR RO'YXATI ($storeName)", "Vaqt: $nowTime", "", "", "", "", ""))
+        sheet3Rows.add(listOf("ID", "Ta'minotchi Ismi", "Telefon", "UZS Balans (So'm)", "USD Balans ($)", "Muddati", "Holati"))
         suppliers.forEach { s ->
-            rows.add(listOf("Ta'minotchi", s.name, s.phone, s.balUzs.toString(), s.balUsd.toLong().toString(), s.dueDate, s.createdAt, if (s.balUzs < 0 || s.balUsd < 0.0) "Qarzdor" else "Toza"))
+            val st = if (s.balUzs < 0 || s.balUsd < 0.0) "Qarzdor" else "Toza"
+            sheet3Rows.add(listOf(s.id.toString(), s.name, s.phone, s.balUzs.toString(), s.balUsd.toLong().toString(), s.dueDate, st))
         }
-        rows.add(listOf("", "", "", "", "", "", "", ""))
 
-        // 2-JADVAL: BARCHA QARZLAR, TO'LOVLAR VA O'CHIRILGAN QARZLAR TARIXI
-        rows.add(listOf("=== 2. TRANZAKSIYALAR TARIXI (QARZLAR VA TO'LOVLAR) ===", "", "", "", "", "", "", ""))
-        rows.add(listOf("ID", "Turi", "Mijoz / Hamkor", "Telefon", "Summa", "Valyuta", "Sana va Vaqt", "Muddat | Izoh | Holat"))
-        allTxs.forEach { tx ->
-            rows.add(
-                listOf(
-                    tx.txId,
-                    tx.kind,
-                    tx.personName,
-                    tx.personPhone,
-                    tx.amount.toString(),
-                    tx.currency,
-                    tx.date,
-                    "Muddat: ${tx.dueDate} | Izoh: ${tx.note} | Holat: ${tx.status}"
-                )
-            )
+        // 4-SAHIFA: Taminotchi tranzaksiyalar
+        val sheet4Rows = mutableListOf<List<String>>()
+        sheet4Rows.add(listOf("TA'MINOTCHI TRANZAKSIYALARI TARIXI", "Vaqt: $nowTime", "", "", "", "", "", "", ""))
+        sheet4Rows.add(listOf("Tranzaksiya ID", "Turi (Kirim/Chiqim)", "Ta'minotchi Ismi", "Telefon", "Summa", "Valyuta", "Izoh / Mahsulot", "Sana va Vaqt", "Muddat / Holat"))
+        supplierTxs.forEach { tx ->
+            sheet4Rows.add(listOf(tx.txId, tx.kind, tx.personName, tx.personPhone, tx.amount.toString(), tx.currency, tx.note.ifEmpty { "Izohsiz" }, tx.date, "Muddat: ${tx.dueDate.ifEmpty { "Yo'q" }} | ${tx.status}"))
         }
-        rows.add(listOf("", "", "", "", "", "", "", ""))
 
-        // 3-JADVAL: KASSA OPERATSIYALARI
-        rows.add(listOf("=== 3. KASSA KIRIM-CHIQIM OPERATSIYALARI ===", "", "", "", "", "", "", ""))
-        rows.add(listOf("Tur", "Kategoriya", "Summa", "Valyuta", "To'lov Turi", "Sana", "Izoh", "Yaratuvchi"))
+        // 5-SAHIFA: Kassa xulosasi
+        var kassaKirimUzs = 0L
+        var kassaChiqimUzs = 0L
+        var kassaKirimUsd = 0L
+        var kassaChiqimUsd = 0L
         kassaList.forEach { k ->
-            rows.add(listOf(k.type, k.category, k.amount.toString(), k.currency, k.payType, k.date, k.note, k.creator))
+            if (k.currency.equals("USD", ignoreCase = true)) {
+                if (k.type == "Kirim") kassaKirimUsd += k.amount else kassaChiqimUsd += k.amount
+            } else {
+                if (k.type == "Kirim") kassaKirimUzs += k.amount else kassaChiqimUzs += k.amount
+            }
         }
-        rows.add(listOf("", "", "", "", "", "", "", ""))
+        val totalClientDebtUzs = clients.filter { it.balUzs < 0 }.sumOf { Math.abs(it.balUzs) }
+        val totalClientDebtUsd = clients.filter { it.balUsd < 0.0 }.sumOf { Math.abs(it.balUsd.toLong()) }
+        val totalSupDebtUzs = suppliers.filter { it.balUzs < 0 }.sumOf { Math.abs(it.balUzs) }
+        val totalSupDebtUsd = suppliers.filter { it.balUsd < 0.0 }.sumOf { Math.abs(it.balUsd.toLong()) }
 
-        // 4-JADVAL: OMBOR MAHSULOTLARI
-        rows.add(listOf("=== 4. OMBOR MAHSULOTLARI QOLDIG'I ===", "", "", "", "", "", "", ""))
-        rows.add(listOf("Mahsulot Nomi", "Sotish Narxi", "Olish Narxi", "Qoldiq Soni", "Birlik", "", "", ""))
-        products.forEach { p ->
-            rows.add(listOf(p.name, p.salePrice.toString(), p.costPrice.toString(), p.qty.toString(), p.unit, "", "", ""))
+        val sheet5Rows = mutableListOf<List<String>>()
+        sheet5Rows.add(listOf("KASSA VA UMUMIY HISOBOT XULOSASI ($storeName)", "Vaqt: $nowTime", "", ""))
+        sheet5Rows.add(listOf("Ko'rsatkich Nomi", "UZS (So'm)", "USD (Dollar $)", "Izoh"))
+        sheet5Rows.add(listOf("Jami Kassa Kirimi", kassaKirimUzs.toString(), kassaKirimUsd.toString(), "Kassaga tushgan jami mablag'"))
+        sheet5Rows.add(listOf("Jami Kassa Chiqimi", kassaChiqimUzs.toString(), kassaChiqimUsd.toString(), "Kassadan chiqqan jami mablag'"))
+        sheet5Rows.add(listOf("Sof Kassa Qoldig'i (Balans)", (kassaKirimUzs - kassaChiqimUzs).toString(), (kassaKirimUsd - kassaChiqimUsd).toString(), "Hozirgi mavjud kassa qoldig'i"))
+        sheet5Rows.add(listOf("Mijozlarning Jami Qarzi", totalClientDebtUzs.toString(), totalClientDebtUsd.toString(), "Qarzdor mijozlar soni: ${clients.count { it.balUzs < 0 || it.balUsd < 0.0 }} ta"))
+        sheet5Rows.add(listOf("Ta'minotchilardan Jami Qarz", totalSupDebtUzs.toString(), totalSupDebtUsd.toString(), "Ta'minotchilar soni: ${suppliers.size} ta"))
+
+        // 6-SAHIFA: Kassa yozuvlari
+        val sheet6Rows = mutableListOf<List<String>>()
+        sheet6Rows.add(listOf("KASSA YOZUVLARI RO'YXATI", "Vaqt: $nowTime", "", "", "", "", "", ""))
+        sheet6Rows.add(listOf("Turi (Kirim/Chiqim)", "Kategoriya / Sabab", "Summa", "Valyuta", "To'lov Usuli", "Sana va Vaqt", "Izoh", "Yaratuvchi"))
+        kassaList.forEach { k ->
+            sheet6Rows.add(listOf(k.type, k.category, k.amount.toString(), k.currency, k.payType, k.date, k.note, k.creator))
         }
+
+        val allSheets = listOf(
+            "Mijozlar" to sheet1Rows,
+            "Tranzaksiyalar" to sheet2Rows,
+            "Taminotchilar" to sheet3Rows,
+            "Taminotchi tranzaksiyalar" to sheet4Rows,
+            "Kassa xulosasi" to sheet5Rows,
+            "Kassa yozuvlari" to sheet6Rows
+        )
 
         val baos = ByteArrayOutputStream()
         val zos = ZipOutputStream(baos)
@@ -4793,6 +4821,11 @@ class MainActivity : AppCompatActivity() {
             zos.closeEntry()
         }
 
+        val overridesXml = StringBuilder()
+        for (i in 1..allSheets.size) {
+            overridesXml.append("  <Override PartName=\"/xl/worksheets/sheet$i.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>\n")
+        }
+
         addZipEntry(
             "[Content_Types].xml",
             """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -4800,8 +4833,7 @@ class MainActivity : AppCompatActivity() {
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
   <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-</Types>"""
+$overridesXml</Types>"""
         )
 
         addZipEntry(
@@ -4812,47 +4844,59 @@ class MainActivity : AppCompatActivity() {
 </Relationships>"""
         )
 
+        val wbRelsXml = StringBuilder()
+        for (i in 1..allSheets.size) {
+            wbRelsXml.append("  <Relationship Id=\"rId$i\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet$i.xml\"/>\n")
+        }
+
         addZipEntry(
             "xl/_rels/workbook.xml.rels",
             """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-</Relationships>"""
+$wbRelsXml</Relationships>"""
         )
+
+        val sheetsXml = StringBuilder()
+        allSheets.forEachIndexed { idx, (sheetName, _) ->
+            val sNum = idx + 1
+            sheetsXml.append("    <sheet name=\"${xmlEscape(sheetName)}\" sheetId=\"$sNum\" r:id=\"rId$sNum\"/>\n")
+        }
 
         addZipEntry(
             "xl/workbook.xml",
             """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheets>
-    <sheet name="QarzDaftar_Baza" sheetId="1" r:id="rId1"/>
-  </sheets>
+$sheetsXml  </sheets>
 </workbook>"""
         )
 
-        val sb = StringBuilder()
-        sb.append("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>""")
-        sb.append("""<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>""")
+        val colLetters = arrayOf("A", "B", "C", "D", "E", "F", "G", "H", "I", "J")
+        allSheets.forEachIndexed { idx, (_, rows) ->
+            val sNum = idx + 1
+            val sb = StringBuilder()
+            sb.append("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>""")
+            sb.append("""<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>""")
 
-        val colLetters = arrayOf("A", "B", "C", "D", "E", "F", "G", "H")
-        rows.forEachIndexed { rIdx, rowVals ->
-            val rNum = rIdx + 1
-            sb.append("<row r=\"$rNum\">")
-            for (cIdx in 0 until minOf(rowVals.size, colLetters.size)) {
-                val cellRef = "${colLetters[cIdx]}$rNum"
-                val rawVal = rowVals[cIdx]
-                val numVal = rawVal.toLongOrNull()
-                if (numVal != null && cIdx in 3..4 && rIdx > 4 && !rawVal.startsWith("+")) {
-                    sb.append("<c r=\"$cellRef\"><v>$numVal</v></c>")
-                } else {
-                    sb.append("<c r=\"$cellRef\" t=\"inlineStr\"><is><t>${xmlEscape(rawVal)}</t></is></c>")
+            rows.forEachIndexed { rIdx, rowVals ->
+                val rNum = rIdx + 1
+                sb.append("<row r=\"$rNum\">")
+                for (cIdx in 0 until minOf(rowVals.size, colLetters.size)) {
+                    val cellRef = "${colLetters[cIdx]}$rNum"
+                    val rawVal = rowVals[cIdx]
+                    val numVal = rawVal.toLongOrNull()
+                    if (numVal != null && rIdx >= 2 && !rawVal.startsWith("+") && rawVal.length < 15) {
+                        sb.append("<c r=\"$cellRef\"><v>$numVal</v></c>")
+                    } else {
+                        sb.append("<c r=\"$cellRef\" t=\"inlineStr\"><is><t>${xmlEscape(rawVal)}</t></is></c>")
+                    }
                 }
+                sb.append("</row>")
             }
-            sb.append("</row>")
-        }
 
-        sb.append("</sheetData></worksheet>")
-        addZipEntry("xl/worksheets/sheet1.xml", sb.toString())
+            sb.append("</sheetData></worksheet>")
+            addZipEntry("xl/worksheets/sheet$sNum.xml", sb.toString())
+        }
 
         zos.finish()
         zos.close()

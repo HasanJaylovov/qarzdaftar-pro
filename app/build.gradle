@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 205
-        versionName "20.5-DeleteClientFromRegistry"
+        versionCode 206
+        versionName "20.6-MultiSheetExcelExport"
     }
 
     buildTypes {
