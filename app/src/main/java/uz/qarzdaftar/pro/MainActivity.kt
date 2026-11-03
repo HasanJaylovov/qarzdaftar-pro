@@ -1907,6 +1907,12 @@ class MainActivity : AppCompatActivity() {
     // ==================== 2. ASOSIY WORKSPACE VA CHAP/O'NG YARIM KO'RINUVCHI SLIDE TUGMALAR ====================
     private fun renderMainWorkspace() {
         rootLayout.removeAllViews()
+        if (!prefs.getBoolean("has_selected_store_category_v21", false)) {
+            prefs.edit().putBoolean("has_selected_store_category_v21", true).apply()
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                showStoreCategoryQuickSelectorDialog()
+            }, 350)
+        }
         rootLayout.setBackgroundColor(Color.parseColor("#F5F7FF"))
 
         val mainFrame = FrameLayout(this).apply {
@@ -5918,6 +5924,7 @@ $sheetsXml  </sheets>
         private var currentY = 0f
         private var isDrawing = false
         private var isErrorState = false
+        private var isProcessingResult = false
 
         private val linePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#5946E8")
@@ -5941,28 +5948,33 @@ $sheetsXml  </sheets>
         }
 
         private fun getNodeCenter(index: Int): Pair<Float, Float> {
+            val w = width.coerceAtLeast(300)
+            val h = height.coerceAtLeast(300)
             val row = index / 3
             val col = index % 3
-            val side = minOf(width, height).toFloat()
-            val offsetX = (width - side) / 2f
-            val offsetY = (height - side) / 2f
-            val pad = side * 0.17f
-            val step = (side - 2f * pad) / 2f
+            val side = minOf(w, h).toFloat()
+            val offsetX = (w - side) / 2f
+            val offsetY = (h - side) / 2f
+            val pad = side * 0.18f
+            val step = ((side - 2f * pad) / 2f).coerceAtLeast(60f)
             return Pair(offsetX + pad + col * step, offsetY + pad + row * step)
         }
 
         fun showErrorAndReset() {
             isErrorState = true
+            isProcessingResult = false
             invalidate()
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            postDelayed({
                 selectedNodes.clear()
                 isErrorState = false
                 invalidate()
-            }, 450)
+            }, 400)
         }
 
         override fun onDraw(canvas: android.graphics.Canvas) {
             super.onDraw(canvas)
+            if (width <= 0 || height <= 0) return
+
             val activeColor = if (isErrorState) Color.parseColor("#EF4444") else Color.parseColor("#5946E8")
             linePaint.color = activeColor
 
@@ -5980,8 +5992,8 @@ $sheetsXml  </sheets>
                 canvas.drawPath(path, linePaint)
             }
 
-            val side = minOf(width, height).toFloat()
-            val outerRad = (side * 0.095f).coerceIn(34f, 60f)
+            val side = minOf(width, height).toFloat().coerceAtLeast(300f)
+            val outerRad = (side * 0.095f).coerceIn(32f, 58f)
             val innerRad = outerRad * 0.42f
 
             for (i in 0 until 9) {
@@ -6003,8 +6015,8 @@ $sheetsXml  </sheets>
         }
 
         private fun checkHitNode(x: Float, y: Float): Int {
-            val side = minOf(width, height).toFloat()
-            val hitRadius = (side * 0.13f).coerceAtLeast(65f)
+            val side = minOf(width, height).toFloat().coerceAtLeast(300f)
+            val hitRadius = (side * 0.13f).coerceAtLeast(64f)
             for (i in 0 until 9) {
                 val (cx, cy) = getNodeCenter(i)
                 val dx = x - cx
@@ -6038,8 +6050,8 @@ $sheetsXml  </sheets>
         }
 
         override fun onTouchEvent(event: MotionEvent): Boolean {
-            if (isErrorState) return true
-            when (event.action) {
+            if (isErrorState || isProcessingResult) return true
+            when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     parent?.requestDisallowInterceptTouchEvent(true)
                     selectedNodes.clear()
@@ -6052,6 +6064,7 @@ $sheetsXml  </sheets>
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    if (!isDrawing) return true
                     currentX = event.x
                     currentY = event.y
                     val hit = checkHitNode(currentX, currentY)
@@ -6067,12 +6080,17 @@ $sheetsXml  </sheets>
                     invalidate()
                     if (selectedNodes.isNotEmpty()) {
                         val patternStr = selectedNodes.joinToString("-")
-                        onPatternCompleted(patternStr)
+                        isProcessingResult = true
+                        // MUHIM: View hierarchy o'zgarishi onTouchEvent ichida emas, keyingi UI frame da bajariladi (Crash bo'lmaydi!)
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            isProcessingResult = false
+                            onPatternCompleted(patternStr)
+                        }, 60)
                     }
                     return true
                 }
             }
-            return super.onTouchEvent(event)
+            return true
         }
     }
 
@@ -6090,22 +6108,70 @@ $sheetsXml  </sheets>
             else -> (lockAuthType == "PATTERN" && appPatternCode.isNotEmpty())
         }
 
-        // Kichkina ramkasiz 100% TO'LIQ EKRAN (MATCH_PARENT x MATCH_PARENT)
         val fullScreenPage = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             setBackgroundColor(Color.parseColor("#F5F7FF"))
-            setPadding(34, (screenH * 0.035f).toInt(), 34, (screenH * 0.025f).toInt())
+            setPadding(32, (screenH * 0.025f).toInt(), 32, (screenH * 0.02f).toInt())
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
         }
 
-        val logoSz = (screenW * 0.17f).toInt().coerceIn(100, 160)
+        // Yuqori qator: Faoliyat turi (Do'kon / Dorixona / Qurilish) va Profilga / Ro'yxatdan o'tishga o'tish
+        val topActionRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 8 }
+        }
+
+        val currentCatIcon = when (detectEffectiveStoreCategory()) {
+            "Dorixona" -> "💊 Dorixona"
+            "Qurilish mollari do'koni" -> "🧱 Qurilish do'koni"
+            else -> "🏪 Do'kon"
+        }
+
+        topActionRow.addView(TextView(this).apply {
+            text = "$currentCatIcon: ${storeName.ifEmpty { "Tanlash" }} ▾"
+            textSize = 12f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#4338CA"))
+            background = glossyCard("#EDE9FE", "#C4B5FD", 22f)
+            setPadding(20, 12, 20, 12)
+            setOnClickListener {
+                showStoreCategoryQuickSelectorDialog {
+                    renderPinLockScreen(mode)
+                }
+            }
+        })
+
+        topActionRow.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
+        })
+
+        topActionRow.addView(TextView(this).apply {
+            text = "📝 Ro'yxatdan o'tish / Kirish"
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#0F172A"))
+            background = glossyCard("#FFFFFF", "#CBD5E1", 22f)
+            setPadding(18, 12, 18, 12)
+            setOnClickListener {
+                isLoggedIn = false
+                isRegisterMode = true
+                renderAuthScreen()
+            }
+        })
+        fullScreenPage.addView(topActionRow)
+
+        val logoSz = (screenW * 0.15f).toInt().coerceIn(90, 145)
         fullScreenPage.addView(ImageView(this).apply {
             setImageResource(R.drawable.ic_qarzdaftar_logo)
-            layoutParams = LinearLayout.LayoutParams(logoSz, logoSz).apply { bottomMargin = 10 }
+            layoutParams = LinearLayout.LayoutParams(logoSz, logoSz).apply { bottomMargin = 8 }
         })
 
         val titleTxt = when (mode) {
@@ -6118,7 +6184,7 @@ $sheetsXml  </sheets>
         fullScreenPage.addView(TextView(this).apply {
             text = titleTxt
             setTextColor(Color.parseColor("#0F172A"))
-            textSize = 21.5f
+            textSize = 20.5f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
         })
@@ -6133,30 +6199,30 @@ $sheetsXml  </sheets>
         fullScreenPage.addView(TextView(this).apply {
             text = subTxt
             setTextColor(Color.parseColor("#64748B"))
-            textSize = 13f
+            textSize = 12.5f
             gravity = Gravity.CENTER
-            setPadding(8, 4, 8, 14)
+            setPadding(8, 4, 8, 10)
         })
 
-        // [ 🔢 PIN-kod ]  |  [ 🕸 Chizma parol ] almashtirish tugmalari
+        // [ 🔢 PIN-kod ]  |  [ 🕸 Chizma parol ]
         val switchRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            background = glossyCard("#FFFFFF", "#CBD5E1", 32f)
-            setPadding(8, 8, 8, 8)
+            background = glossyCard("#FFFFFF", "#CBD5E1", 30f)
+            setPadding(6, 6, 6, 6)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 14 }
+            ).apply { bottomMargin = 10 }
         }
 
         switchRow.addView(TextView(this).apply {
             text = "🔢  PIN-kod"
             gravity = Gravity.CENTER
-            textSize = 13.5f
+            textSize = 13f
             setTypeface(null, Typeface.BOLD)
             setTextColor(if (!isPatternActive) Color.WHITE else Color.parseColor("#1E293B"))
-            background = if (!isPatternActive) glossyPurpleGrad(26f) else null
-            setPadding(16, 16, 16, 16)
+            background = if (!isPatternActive) glossyPurpleGrad(24f) else null
+            setPadding(14, 15, 14, 15)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             setOnClickListener {
                 if (mode.startsWith("SETUP") || mode.startsWith("CONFIRM")) {
@@ -6176,11 +6242,11 @@ $sheetsXml  </sheets>
         switchRow.addView(TextView(this).apply {
             text = "🕸  Chizma parol"
             gravity = Gravity.CENTER
-            textSize = 13.5f
+            textSize = 13f
             setTypeface(null, Typeface.BOLD)
             setTextColor(if (isPatternActive) Color.WHITE else Color.parseColor("#1E293B"))
-            background = if (isPatternActive) glossyPurpleGrad(26f) else null
-            setPadding(16, 16, 16, 16)
+            background = if (isPatternActive) glossyPurpleGrad(24f) else null
+            setPadding(14, 15, 14, 15)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             setOnClickListener {
                 if (mode.startsWith("SETUP") || mode.startsWith("CONFIRM")) {
@@ -6205,12 +6271,12 @@ $sheetsXml  </sheets>
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     0,
                     1f
-                ).apply { topMargin = 6; bottomMargin = 14 }
+                ).apply { topMargin = 4; bottomMargin = 10 }
             }
 
             lateinit var patternView: FullPatternLockView
             patternView = FullPatternLockView(this) { drawnPattern ->
-                val count = drawnPattern.split("-").size
+                val count = drawnPattern.split("-").filter { it.isNotEmpty() }.size
                 if (count < 4) {
                     Toast.makeText(this@MainActivity, "⚠️ Kamida 4 ta nuqtani ulang!", Toast.LENGTH_SHORT).show()
                     patternView.showErrorAndReset()
@@ -6231,13 +6297,12 @@ $sheetsXml  </sheets>
                                 .putString("lock_auth_type", "PATTERN")
                                 .putBoolean("pin_security_enabled", true)
                                 .apply()
-                            Toast.makeText(this@MainActivity, "✅ Chizma parol saqlandi!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@MainActivity, "✅ Chizma parol muvaffaqiyatli saqlandi!", Toast.LENGTH_SHORT).show()
                             isPinUnlockedThisSession = true
                             renderMainWorkspace()
                         } else {
                             Toast.makeText(this@MainActivity, "❌ Chizmalar mos kelmadi! Qaytadan chizing.", Toast.LENGTH_LONG).show()
                             tempPatternBuffer = ""
-                            patternView.showErrorAndReset()
                             renderPinLockScreen("SETUP_PATTERN")
                         }
                     }
@@ -6266,8 +6331,8 @@ $sheetsXml  </sheets>
             val bioBar = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
-                background = glossyPurpleGrad(32f)
-                setPadding(28, 22, 28, 22)
+                background = glossyPurpleGrad(30f)
+                setPadding(24, 20, 24, 20)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
@@ -6276,12 +6341,12 @@ $sheetsXml  </sheets>
             }
             bioBar.addView(ImageView(this).apply {
                 setImageResource(R.drawable.ic_fingerprint_vec)
-                layoutParams = LinearLayout.LayoutParams(54, 54).apply { rightMargin = 16 }
+                layoutParams = LinearLayout.LayoutParams(50, 50).apply { rightMargin = 14 }
             })
             bioBar.addView(TextView(this).apply {
                 text = "Barmoq izi / Face ID orqali ochish"
                 setTextColor(Color.WHITE)
-                textSize = 14.5f
+                textSize = 14f
                 setTypeface(null, Typeface.BOLD)
             })
             fullScreenPage.addView(bioBar)
@@ -6293,7 +6358,7 @@ $sheetsXml  </sheets>
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = 4; bottomMargin = 14 }
+                ).apply { topMargin = 4; bottomMargin = 12 }
             }
             val dotViews = mutableListOf<View>()
             for (i in 0 until 6) {
@@ -6303,7 +6368,7 @@ $sheetsXml  </sheets>
                         setColor(Color.parseColor("#E2E8F0"))
                         setStroke(3, Color.parseColor("#94A3B8"))
                     }
-                    layoutParams = LinearLayout.LayoutParams(44, 44).apply { setMargins(14, 0, 14, 0) }
+                    layoutParams = LinearLayout.LayoutParams(42, 42).apply { setMargins(14, 0, 14, 0) }
                 }
                 dotViews.add(dot)
                 dotsRow.addView(dot)
@@ -6362,7 +6427,6 @@ $sheetsXml  </sheets>
                 }
             }
 
-            // BUTUN QOLGAN EKRANNI TO'LIQ EGALLOVCHI (weight = 1f) RAQAMLAR PANELI
             val keypadGrid = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
@@ -6380,7 +6444,7 @@ $sheetsXml  </sheets>
                 listOf("BIO", "0", "⌫")
             )
 
-            val btnDiameter = (minOf(screenW / 3.6f, screenH / 8.0f)).toInt().coerceIn(145, 240)
+            val btnDiameter = (minOf(screenW / 3.7f, screenH / 8.3f)).toInt().coerceIn(135, 225)
 
             rows.forEach { rVals ->
                 val rowLin = LinearLayout(this).apply {
@@ -6416,7 +6480,7 @@ $sheetsXml  </sheets>
                         val numBtn = TextView(this).apply {
                             text = keyStr
                             gravity = Gravity.CENTER
-                            textSize = if (keyStr == "⌫") 23f else 26f
+                            textSize = if (keyStr == "⌫") 22f else 25f
                             setTypeface(null, Typeface.BOLD)
                             setTextColor(Color.parseColor("#0F172A"))
                             background = glossyRoundBtnBg("#FFFFFF", "#CBD5E1")
@@ -6435,7 +6499,7 @@ $sheetsXml  </sheets>
                                         if (enteredPin.length == 6) {
                                             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                                                 handlePinDone()
-                                            }, 130)
+                                            }, 120)
                                         }
                                     }
                                 }
