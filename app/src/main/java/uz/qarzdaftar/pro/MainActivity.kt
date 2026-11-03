@@ -655,8 +655,6 @@ class MainActivity : AppCompatActivity() {
     private var appPatternCode = ""
     private var tempPatternBuffer = ""
     private var lockAuthType = "PIN"
-    private var isBiometricEnabled = true
-    private var isPinUnlockedThisSession = false
     private var autoLockTimeoutMs = 60_000L
     private var lastInteractionTimeMs = System.currentTimeMillis()
 
