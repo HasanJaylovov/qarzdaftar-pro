@@ -6207,7 +6207,7 @@ $sheetsXml  </sheets>
             Triple("Qurilish mollari do'koni", "🧱  Qurilish mollari do'koni", "SMSda: «... qurilish mollari do'konida qarz yozildi»")
         )
 
-        lateinit var etStoreInput: EditText
+        var etStoreInput: EditText? = null
 
         fun refreshCategorySelection() {
             catBox.removeAllViews()
@@ -6229,12 +6229,10 @@ $sheetsXml  </sheets>
                         selectedCat = catKey
                         storeCategory = catKey
                         refreshCategorySelection()
-                        if (::etStoreInput.isInitialized) {
-                            etStoreInput.hint = when (catKey) {
+                        etStoreInput?.hint = when (catKey) {
                                 "Dorixona" -> "💊 Dorixona nomi (masalan: Shifo Farm)"
                                 "Qurilish mollari do'koni" -> "🧱 Qurilish mollari do'koni nomi (masalan: Stroy Market)"
                                 else -> "🏪 Do'kon nomi (masalan: Baraka Market)"
-                            }
                         }
                     }
                 }
@@ -6270,7 +6268,7 @@ $sheetsXml  </sheets>
         etPass.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         val etAddr = makeGlassInput("📍 Manzil (ixtiyoriy)", storeAddress)
 
-        formCard.addView(etStoreInput)
+        formCard.addView(etStoreInput!!)
         formCard.addView(etOwnerInput)
         formCard.addView(etPhone)
         formCard.addView(etPass)
@@ -6291,7 +6289,7 @@ $sheetsXml  </sheets>
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = 10 }
             setOnClickListener {
-                val stName = etStoreInput.text.toString().trim()
+                val stName = etStoreInput?.text?.toString()?.trim() ?: ""
                 val owName = etOwnerInput.text.toString().trim()
                 val ph = etPhone.text.toString().trim()
                 val pw = etPass.text.toString().trim()
