@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 209
-        versionName "20.9-FullScreenPatternAndStoreTypes"
+        versionCode 210
+        versionName "21.0-VerifiedFullScreenPatternAndStoreType"
     }
 
     buildTypes {

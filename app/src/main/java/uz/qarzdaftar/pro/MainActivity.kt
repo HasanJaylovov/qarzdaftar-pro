@@ -620,6 +620,7 @@ class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_m
 }
 
 class MainActivity : AppCompatActivity() {
+    private var ownerName = ""
 
     private val SERVER_URL = "https://hasanjaylovov.pythonanywhere.com"
     private val BOT_USERNAME = "qarzdaftar_pay_bot"
@@ -1030,11 +1031,17 @@ class MainActivity : AppCompatActivity() {
     }
 
 
+
+
+
+
+
+
     private fun detectEffectiveStoreCategory(): String {
-        val savedCat = prefs.getString("store_category", storeCategory) ?: storeCategory
+        val savedCat = (prefs.getString("store_category", storeCategory) ?: storeCategory).trim()
         val lowerName = storeName.lowercase(Locale.getDefault())
         return when {
-            savedCat.contains("Dorixona", ignoreCase = true) || lowerName.contains("dorixona") || lowerName.contains("apteka") || lowerName.contains("farm") || lowerName.contains("shifo") -> "Dorixona"
+            savedCat.contains("Dorixona", ignoreCase = true) || lowerName.contains("dorixona") || lowerName.contains("apteka") || lowerName.contains("farm") || lowerName.contains("dori") -> "Dorixona"
             savedCat.contains("Qurilish", ignoreCase = true) || lowerName.contains("qurilish") || lowerName.contains("stroy") || lowerName.contains("xo'jalik") || lowerName.contains("sement") -> "Qurilish mollari do'koni"
             else -> "Do'kon"
         }
@@ -1042,112 +1049,220 @@ class MainActivity : AppCompatActivity() {
 
     private fun storeTitleWithLocativeSuffix(): String {
         val cat = detectEffectiveStoreCategory()
-        val cleanStore = storeName.trim().ifEmpty { cat }
-        val lowerStore = cleanStore.lowercase(Locale.getDefault())
+        val rawName = storeName.trim().ifEmpty { cat }
+        val low = rawName.lowercase(Locale.getDefault())
         return when (cat) {
             "Dorixona" -> {
-                if (lowerStore.endsWith("dorixona")) "$cleanStore" + "sida"
-                else if (lowerStore.endsWith("dorixonasi")) "$cleanStore" + "da"
-                else "$cleanStore dorixonasida"
+                when {
+                    low.endsWith("dorixona") -> "$rawName" + "sida"
+                    low.endsWith("dorixonasi") -> "$rawName" + "da"
+                    else -> "$rawName dorixonasida"
+                }
             }
             "Qurilish mollari do'koni" -> {
-                if (lowerStore.contains("qurilish")) "$cleanStore do'konida"
-                else "$cleanStore qurilish mollari do'konida"
+                when {
+                    low.contains("qurilish") && low.endsWith("do'koni") -> "$rawName" + "da"
+                    low.contains("qurilish") -> "$rawName do'konida"
+                    else -> "$rawName qurilish mollari do'konida"
+                }
             }
             else -> {
-                if (lowerStore.endsWith("do'kon") || lowerStore.endsWith("dokon")) "$cleanStore" + "ida"
-                else if (lowerStore.endsWith("do'koni") || lowerStore.endsWith("dokoni")) "$cleanStore" + "da"
-                else "$cleanStore do'konida"
+                when {
+                    low.endsWith("do'kon") || low.endsWith("dokon") -> "$rawName" + "ida"
+                    low.endsWith("do'koni") || low.endsWith("dokoni") -> "$rawName" + "da"
+                    else -> "$rawName do'konida"
+                }
             }
         }
     }
 
     private fun storeTitleWithAblativeSuffix(): String {
         val cat = detectEffectiveStoreCategory()
-        val cleanStore = storeName.trim().ifEmpty { cat }
-        val lowerStore = cleanStore.lowercase(Locale.getDefault())
+        val rawName = storeName.trim().ifEmpty { cat }
+        val low = rawName.lowercase(Locale.getDefault())
         return when (cat) {
             "Dorixona" -> {
-                if (lowerStore.endsWith("dorixona")) "$cleanStore" + "sidagi"
-                else if (lowerStore.endsWith("dorixonasi")) "$cleanStore" + "dagi"
-                else "$cleanStore dorixonasidagi"
+                when {
+                    low.endsWith("dorixona") -> "$rawName" + "sidagi"
+                    low.endsWith("dorixonasi") -> "$rawName" + "dagi"
+                    else -> "$rawName dorixonasidagi"
+                }
             }
             "Qurilish mollari do'koni" -> {
-                if (lowerStore.contains("qurilish")) "$cleanStore do'konidagi"
-                else "$cleanStore qurilish mollari do'konidagi"
+                when {
+                    low.contains("qurilish") -> "$rawName do'konidagi"
+                    else -> "$rawName qurilish mollari do'konidagi"
+                }
             }
             else -> {
-                if (lowerStore.endsWith("do'kon") || lowerStore.endsWith("dokon")) "$cleanStore" + "idagi"
-                else if (lowerStore.endsWith("do'koni") || lowerStore.endsWith("dokoni")) "$cleanStore" + "dagi"
-                else "$cleanStore do'konidagi"
+                when {
+                    low.endsWith("do'kon") || low.endsWith("dokon") -> "$rawName" + "idagi"
+                    low.endsWith("do'koni") || low.endsWith("dokoni") -> "$rawName" + "dagi"
+                    else -> "$rawName do'konidagi"
+                }
             }
         }
     }
 
-    private fun triggerBackgroundSmsAndVoiceCall(clientName: String, phoneNumber: String, amount: Long, kind: String, note: String, dueDate: String = "", isSupplier: Boolean = false, currency: String = "UZS") {
-        val personRecord = db.getPersonByName(clientName, isSupplier)
-        var cleanPhone = normalizeUzPhone(phoneNumber)
-        if (cleanPhone.isEmpty() && personRecord != null) {
-            cleanPhone = normalizeUzPhone(personRecord.phone)
+    private fun showStoreCategoryQuickSelectorDialog(onSelected: () -> Unit = {}) {
+        val sheet = BottomSheetDialog(this)
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = glossyCard("#FFFFFF", "#E2E8F8", 42f)
+            setPadding(32, 28, 32, 44)
+        }
+        wrap.addView(TextView(this).apply {
+            text = "🏢 Faoliyat turi va Do'kon ma'lumotlari"
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 18.5f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 0, 0, 6)
+        })
+        wrap.addView(TextView(this).apply {
+            text = "Tanlangan faoliyat turiga qarab mijozlarga boradigan SMS xabarlar avtomatik moslashadi:"
+            setTextColor(Color.parseColor("#64748B"))
+            textSize = 12.5f
+            setPadding(0, 0, 0, 16)
+        })
+
+        var chosenCat = detectEffectiveStoreCategory()
+        val cardsHolder = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 14 }
         }
 
+        val items = listOf(
+            Triple("Do'kon", "🏪  Do'kon (Market / Savdo)", "SMSda: «... do'konida sizga qarz yozildi»"),
+            Triple("Dorixona", "💊  Dorixona (Apteka)", "SMSda: «... dorixonasida sizga qarz yozildi»"),
+            Triple("Qurilish mollari do'koni", "🧱  Qurilish mollari do'koni", "SMSda: «... qurilish mollari do'konida qarz yozildi»")
+        )
+
+        fun rebuildCards() {
+            cardsHolder.removeAllViews()
+            items.forEach { (key, title, sub) ->
+                val sel = (chosenCat == key)
+                val box = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    background = GradientDrawable().apply {
+                        cornerRadius = 24f
+                        setColor(Color.parseColor(if (sel) "#EDE9FE" else "#F8FAFC"))
+                        setStroke(if (sel) 4 else 2, Color.parseColor(if (sel) "#5946E8" else "#CBD5E1"))
+                    }
+                    setPadding(22, 16, 22, 16)
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 8 }
+                    setOnClickListener {
+                        chosenCat = key
+                        rebuildCards()
+                    }
+                }
+                box.addView(TextView(this).apply {
+                    text = if (sel) "✅  $title" else "⚪  $title"
+                    setTextColor(Color.parseColor(if (sel) "#4338CA" else "#0F172A"))
+                    textSize = 14f
+                    setTypeface(null, Typeface.BOLD)
+                })
+                box.addView(TextView(this).apply {
+                    text = sub
+                    setTextColor(Color.parseColor("#64748B"))
+                    textSize = 11.5f
+                    setPadding(0, 4, 0, 0)
+                })
+                cardsHolder.addView(box)
+            }
+        }
+        rebuildCards()
+        wrap.addView(cardsHolder)
+
+        val etName = makeGlassInput("🏢 Muassasa nomi (masalan: Shifo / Baraka)", storeName)
+        val etOwner = makeGlassInput("👤 Do'konchi ism-familiyasi", ownerName)
+        wrap.addView(etName)
+        wrap.addView(etOwner)
+
+        wrap.addView(TextView(this).apply {
+            text = "💾  Saqlash"
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyPurpleGrad(28f)
+            setPadding(24, 24, 24, 24)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 8 }
+            setOnClickListener {
+                val newSt = etName.text.toString().trim()
+                val newOw = etOwner.text.toString().trim()
+                storeCategory = chosenCat
+                if (newSt.isNotEmpty()) storeName = newSt
+                ownerName = newOw.ifEmpty { storeName }
+                prefs.edit()
+                    .putString("store_category", storeCategory)
+                    .putString("store_name", storeName)
+                    .putString("owner_name", ownerName)
+                    .apply()
+                Toast.makeText(this@MainActivity, "✅ Saqlandi: $storeName ($storeCategory) — $ownerName", Toast.LENGTH_LONG).show()
+                sheet.dismiss()
+                onSelected()
+                renderMainWorkspace()
+            }
+        })
+
+        sheet.setContentView(wrap)
+        sheet.show()
+    }
+
+    private fun triggerBackgroundSmsAndVoiceCall(
+        clientName: String,
+        phone: String,
+        amount: Long,
+        kind: String,
+        note: String,
+        dueDate: String,
+        isSupplier: Boolean,
+        currency: String = "UZS"
+    ) {
+        if (phone.isBlank()) return
+        if (!prefs.getBoolean("sms_enabled_$clientName", true)) return
+
+        val personRecord = db.getPersonByName(clientName, isSupplier)
         val remUzs = if ((personRecord?.balUzs ?: 0L) < 0L) Math.abs(personRecord?.balUzs ?: 0L) else 0L
         val remUsd = if ((personRecord?.balUsd ?: 0.0) < 0.0) Math.abs((personRecord?.balUsd ?: 0.0).toLong()) else 0L
 
-        val curUnit = if (currency == "USD") "USD ($)" else "so'm"
-        val fmtAmt = formatMoney(Math.abs(amount), curUnit)
+        val combinedRemaining = when {
+            remUzs > 0L && remUsd > 0L -> "${formatMoney(remUzs, "so'm")} va ${formatMoney(remUsd, "USD")}"
+            remUsd > 0L -> formatMoney(remUsd, "USD")
+            remUzs > 0L -> formatMoney(remUzs, "so'm")
+            else -> "0 so'm (Qarzingiz qolmadi)"
+        }
 
-        val remParts = mutableListOf<String>()
-        if (remUzs > 0L) remParts.add(formatMoney(remUzs, "so'm"))
-        if (remUsd > 0L) remParts.add(formatMoney(remUsd, "USD"))
-        val combinedRemaining = if (remParts.isEmpty()) "0 so'm" else remParts.joinToString(" va ")
+        val curLabel = if (currency.equals("USD", ignoreCase = true)) "USD" else "so'm"
+        val fmtAmt = formatMoney(Math.abs(amount), curLabel)
+        val duePart = if (dueDate.isNotBlank() && dueDate != "Bugun") " To'lov muddati: $dueDate." else ""
+        val cleanNote = note.trim()
+        val prodPart = if (cleanNote.isNotEmpty() && !cleanNote.equals("Izohsiz", ignoreCase = true)) "Olingan mahsulot/izoh: $cleanNote. " else ""
 
-        val duePart = if (dueDate.isNotBlank() && dueDate != "Bugun") " Muddat: $dueDate." else ""
+        // Avtomatik ravishda: "... dorixonasida", "... qurilish mollari do'konida" yoki "... do'konida"
+        val placeLocative = storeTitleWithLocativeSuffix()
+        val placeAblative = storeTitleWithAblativeSuffix()
 
-        val smsText = when {
-            kind == "ToliqYopildi" -> {
-                "Hurmatli $clientName, siz ${storeTitleWithAblativeSuffix()} qarzingizni ($fmtAmt) to'liq to'ladingiz. Qolgan umumiy qarzingiz: $combinedRemaining. Rahmat!"
+        val smsText = when (kind) {
+            "Kirim" -> {
+                "Hurmatli $clientName, $placeLocative $fmtAmt to'lovingiz qabul qilindi. ${prodPart}Qolgan umumiy qarzingiz: $combinedRemaining."
             }
-            kind == "Yopildi" -> {
-                "Hurmatli $clientName, ${storeTitleWithAblativeSuffix()} $fmtAmt qarzingiz yopildi ($note). Qolgan umumiy qarzingiz: $combinedRemaining. Rahmat!"
+            "Yopildi", "Ochirildi" -> {
+                "Hurmatli $clientName, $placeAblative $fmtAmt qarzingiz yopildi ($cleanNote). Qolgan umumiy qarzingiz: $combinedRemaining."
             }
-            kind == "Kirim" -> {
-                "Hurmatli $clientName, ${storeTitleWithAblativeSuffix()} qarzingizdan $fmtAmt to'lov qabul qilindi. Qolgan umumiy qarzingiz: $combinedRemaining. Rahmat!"
+            "ToliqYopildi" -> {
+                "Hurmatli $clientName, $placeAblative barcha qarzlaringiz ($fmtAmt) to'liq yopildi. Hozirgi qarzingiz: 0 so'm. Xaridingiz uchun rahmat!"
             }
             else -> {
-                val prodInfo = if (note.isNotBlank()) "Olingan mahsulot/izoh: $note. " else ""
-                "Hurmatli $clientName, ${storeTitleWithLocativeSuffix()} sizga $fmtAmt yangi qarz yozildi. ${prodInfo}Jami umumiy qarzingiz: $combinedRemaining.$duePart"
+                "Hurmatli $clientName, $placeLocative sizga $fmtAmt yangi qarz yozildi. ${prodPart}Jami umumiy qarzingiz: $combinedRemaining.$duePart"
             }
         }
 
-        if (cleanPhone.isNotEmpty()) {
-            sendAutoSms(cleanPhone, smsText)
+        if (isAutoSmsEnabled) {
+            sendAutoSms(phone, smsText)
         }
-
-        if (isAutoVoiceCallEnabled) {
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    val url = URL("$SERVER_URL/api/auto_voice_call")
-                    val conn = url.openConnection() as HttpURLConnection
-                    conn.requestMethod = "POST"
-                    conn.doOutput = true
-                    conn.setRequestProperty("Content-Type", "application/json")
-                    val body = JSONObject().apply {
-                        put("store_id", storeId)
-                        put("store_name", storeName)
-                        put("client_name", clientName)
-                        put("client_phone", cleanPhone)
-                        put("amount", fmtAmt)
-                        put("remaining_debt", combinedRemaining)
-                        put("kind", kind)
-                        put("note", note)
-                        put("due_date", dueDate)
-                        put("voice_text", smsText)
-                    }
-                    conn.outputStream.write(body.toString().toByteArray())
-                    conn.inputStream.close()
-                } catch (_: Exception) {}
-            }
+        if (isAutoVoiceCallEnabled && (kind == "Chiqim" || kind == "Eslatma")) {
+            speakDebtReminderUzbek(clientName, Math.abs(amount), dueDate)
         }
     }
 
@@ -1289,7 +1404,7 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 16 }
         }
         topBar.addView(TextView(this).apply {
-            text = "💬 Admin bilan suhbat (Hasan Jaylovov)"
+            text = "💬 Admin bilan suhbat ($ownerName)"
             setTextColor(Color.parseColor("#0F172A"))
             textSize = 17f
             setTypeface(null, Typeface.BOLD)
@@ -5786,256 +5901,549 @@ $sheetsXml  </sheets>
         else -> "1 minut"
     }
 
-    fun renderPinLockScreen(mode: String) {
-        try {
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-            currentFocus?.let { imm?.hideSoftInputFromWindow(it.windowToken, 0) }
-        } catch (_: Exception) {}
+    inner class FullPatternLockView(
+        context: Context,
+        private val onPatternCompleted: (String) -> Unit
+    ) : View(context) {
 
+        private val selectedNodes = mutableListOf<Int>()
+        private var currentX = 0f
+        private var currentY = 0f
+        private var isDrawing = false
+        private var isErrorState = false
+
+        private val linePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#5946E8")
+            strokeWidth = 16f
+            style = android.graphics.Paint.Style.STROKE
+            strokeCap = android.graphics.Paint.Cap.ROUND
+            strokeJoin = android.graphics.Paint.Join.ROUND
+        }
+
+        private val nodeOuterPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.FILL
+        }
+
+        private val nodeRingPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.STROKE
+            strokeWidth = 6f
+        }
+
+        private val nodeInnerPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.FILL
+        }
+
+        private fun getNodeCenter(index: Int): Pair<Float, Float> {
+            val row = index / 3
+            val col = index % 3
+            val side = minOf(width, height).toFloat()
+            val offsetX = (width - side) / 2f
+            val offsetY = (height - side) / 2f
+            val pad = side * 0.17f
+            val step = (side - 2f * pad) / 2f
+            return Pair(offsetX + pad + col * step, offsetY + pad + row * step)
+        }
+
+        fun showErrorAndReset() {
+            isErrorState = true
+            invalidate()
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                selectedNodes.clear()
+                isErrorState = false
+                invalidate()
+            }, 450)
+        }
+
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            super.onDraw(canvas)
+            val activeColor = if (isErrorState) Color.parseColor("#EF4444") else Color.parseColor("#5946E8")
+            linePaint.color = activeColor
+
+            if (selectedNodes.isNotEmpty()) {
+                val path = android.graphics.Path()
+                val first = getNodeCenter(selectedNodes[0])
+                path.moveTo(first.first, first.second)
+                for (i in 1 until selectedNodes.size) {
+                    val pt = getNodeCenter(selectedNodes[i])
+                    path.lineTo(pt.first, pt.second)
+                }
+                if (isDrawing) {
+                    path.lineTo(currentX, currentY)
+                }
+                canvas.drawPath(path, linePaint)
+            }
+
+            val side = minOf(width, height).toFloat()
+            val outerRad = (side * 0.095f).coerceIn(34f, 60f)
+            val innerRad = outerRad * 0.42f
+
+            for (i in 0 until 9) {
+                val (cx, cy) = getNodeCenter(i)
+                val isSelected = selectedNodes.contains(i)
+                if (isSelected) {
+                    nodeOuterPaint.color = if (isErrorState) Color.parseColor("#FEE2E2") else Color.parseColor("#E0E7FF")
+                    nodeRingPaint.color = activeColor
+                    nodeInnerPaint.color = activeColor
+                } else {
+                    nodeOuterPaint.color = Color.WHITE
+                    nodeRingPaint.color = Color.parseColor("#CBD5E1")
+                    nodeInnerPaint.color = Color.parseColor("#64748B")
+                }
+                canvas.drawCircle(cx, cy, outerRad, nodeOuterPaint)
+                canvas.drawCircle(cx, cy, outerRad, nodeRingPaint)
+                canvas.drawCircle(cx, cy, innerRad, nodeInnerPaint)
+            }
+        }
+
+        private fun checkHitNode(x: Float, y: Float): Int {
+            val side = minOf(width, height).toFloat()
+            val hitRadius = (side * 0.13f).coerceAtLeast(65f)
+            for (i in 0 until 9) {
+                val (cx, cy) = getNodeCenter(i)
+                val dx = x - cx
+                val dy = y - cy
+                if (dx * dx + dy * dy <= hitRadius * hitRadius) {
+                    return i
+                }
+            }
+            return -1
+        }
+
+        private fun addNodeWithIntermediate(targetNode: Int) {
+            if (selectedNodes.isEmpty()) {
+                selectedNodes.add(targetNode)
+                return
+            }
+            val lastNode = selectedNodes.last()
+            val r1 = lastNode / 3
+            val c1 = lastNode % 3
+            val r2 = targetNode / 3
+            val c2 = targetNode % 3
+            if ((r1 + r2) % 2 == 0 && (c1 + c2) % 2 == 0) {
+                val midNode = ((r1 + r2) / 2) * 3 + ((c1 + c2) / 2)
+                if (!selectedNodes.contains(midNode)) {
+                    selectedNodes.add(midNode)
+                }
+            }
+            if (!selectedNodes.contains(targetNode)) {
+                selectedNodes.add(targetNode)
+            }
+        }
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            if (isErrorState) return true
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    selectedNodes.clear()
+                    isDrawing = true
+                    currentX = event.x
+                    currentY = event.y
+                    val hit = checkHitNode(currentX, currentY)
+                    if (hit != -1) selectedNodes.add(hit)
+                    invalidate()
+                    return true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    currentX = event.x
+                    currentY = event.y
+                    val hit = checkHitNode(currentX, currentY)
+                    if (hit != -1 && !selectedNodes.contains(hit)) {
+                        addNodeWithIntermediate(hit)
+                    }
+                    invalidate()
+                    return true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                    isDrawing = false
+                    invalidate()
+                    if (selectedNodes.isNotEmpty()) {
+                        val patternStr = selectedNodes.joinToString("-")
+                        onPatternCompleted(patternStr)
+                    }
+                    return true
+                }
+            }
+            return super.onTouchEvent(event)
+        }
+    }
+
+    private fun renderPinLockScreen(mode: String = "UNLOCK") {
         rootLayout.removeAllViews()
         rootLayout.setBackgroundColor(Color.parseColor("#F5F7FF"))
 
-        var currentStep = mode
-        if (mode == "SETUP_NEW") currentStep = "SETUP_FIRST"
+        val dm = resources.displayMetrics
+        val screenH = dm.heightPixels
+        val screenW = dm.widthPixels
 
-        var firstEnteredPin = ""
-        var typedPin = ""
+        val isPatternActive = when (mode) {
+            "SETUP_PATTERN", "CONFIRM_PATTERN" -> true
+            "SETUP_NEW", "CONFIRM_NEW" -> false
+            else -> (lockAuthType == "PATTERN" && appPatternCode.isNotEmpty())
+        }
 
-        val mainCol = LinearLayout(this).apply {
+        // Kichkina ramkasiz 100% TO'LIQ EKRAN (MATCH_PARENT x MATCH_PARENT)
+        val fullScreenPage = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(28, 36, 28, 32)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.MATCH_PARENT
+            gravity = Gravity.CENTER_HORIZONTAL
+            setBackgroundColor(Color.parseColor("#F5F7FF"))
+            setPadding(34, (screenH * 0.035f).toInt(), 34, (screenH * 0.025f).toInt())
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
             )
         }
 
-        val cardBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            background = glossyCard("#FFFFFF", "#E2E8F0", 38f)
-            elevation = 10f
-            setPadding(28, 34, 28, 34)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        val logo = ImageView(this).apply {
+        val logoSz = (screenW * 0.17f).toInt().coerceIn(100, 160)
+        fullScreenPage.addView(ImageView(this).apply {
             setImageResource(R.drawable.ic_qarzdaftar_logo)
-            layoutParams = LinearLayout.LayoutParams(82, 82).apply { bottomMargin = 12 }
-        }
-        cardBox.addView(logo)
+            layoutParams = LinearLayout.LayoutParams(logoSz, logoSz).apply { bottomMargin = 10 }
+        })
 
-        val tvTitle = TextView(this).apply {
-            text = when (currentStep) {
-                "UNLOCK" -> "PIN-kodni kiriting"
-                "CHANGE_VERIFY_OLD" -> "Eski PIN-kodni kiriting"
-                else -> "Yangi 6 xonali PIN-kod"
-            }
+        val titleTxt = when (mode) {
+            "SETUP_NEW" -> "Yangi PIN-kod o'rnating"
+            "CONFIRM_NEW" -> "PIN-kodni tasdiqlang"
+            "SETUP_PATTERN" -> "Yangi Chizma parol chizing"
+            "CONFIRM_PATTERN" -> "Chizma parolni tasdiqlang"
+            else -> if (isPatternActive) "Chizma parolni chizing" else "PIN-kodni kiriting"
+        }
+        fullScreenPage.addView(TextView(this).apply {
+            text = titleTxt
             setTextColor(Color.parseColor("#0F172A"))
-            textSize = 17f
+            textSize = 21.5f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
-        }
-        cardBox.addView(tvTitle)
+        })
 
-        val tvSub = TextView(this).apply {
-            text = when (currentStep) {
-                "UNLOCK" -> "Dasturga kirish uchun 6 xonali kodni tering"
-                "CHANGE_VERIFY_OLD" -> "O'zgartirish uchun amaldagi PIN-kodni tasdiqlang"
-                else -> "Xavfsizlik uchun 6 ta raqam tanlang"
-            }
+        val subTxt = when (mode) {
+            "SETUP_NEW" -> "Dasturga kirish uchun 6 xonali kod tering"
+            "CONFIRM_NEW" -> "Kiritilgan 6 xonali kodni qaytadan tering"
+            "SETUP_PATTERN" -> "Kamida 4 ta nuqtani barmoqni uzmasdan ulang"
+            "CONFIRM_PATTERN" -> "Chizilgan grafik kalitni qaytadan chizing"
+            else -> if (isPatternActive) "Dasturga kirish uchun grafik kalitni chizing" else "Dasturga kirish uchun 6 xonali kodni tering"
+        }
+        fullScreenPage.addView(TextView(this).apply {
+            text = subTxt
             setTextColor(Color.parseColor("#64748B"))
-            textSize = 12f
+            textSize = 13f
             gravity = Gravity.CENTER
-            setPadding(12, 6, 12, 24)
-        }
-        cardBox.addView(tvSub)
+            setPadding(8, 4, 8, 14)
+        })
 
-        val dotsRow = LinearLayout(this).apply {
+        // [ 🔢 PIN-kod ]  |  [ 🕸 Chizma parol ] almashtirish tugmalari
+        val switchRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
+            background = glossyCard("#FFFFFF", "#CBD5E1", 32f)
+            setPadding(8, 8, 8, 8)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 28 }
+            ).apply { bottomMargin = 14 }
         }
-        val dotViews = Array(6) {
-            View(this).apply {
-                layoutParams = LinearLayout.LayoutParams(32, 32).apply { setMargins(12, 0, 12, 0) }
-                background = glossyRoundBtnBg("#F1F5F9", "#CBD5E1")
-                dotsRow.addView(this)
-            }
-        }
-        cardBox.addView(dotsRow)
 
-        fun updateDotsUI() {
-            for (i in 0 until 6) {
-                val filled = i < typedPin.length
-                dotViews[i].background = if (filled) {
-                    glossyRoundBtnBg("#5B4CFF", "#5B4CFF")
+        switchRow.addView(TextView(this).apply {
+            text = "🔢  PIN-kod"
+            gravity = Gravity.CENTER
+            textSize = 13.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(if (!isPatternActive) Color.WHITE else Color.parseColor("#1E293B"))
+            background = if (!isPatternActive) glossyPurpleGrad(26f) else null
+            setPadding(16, 16, 16, 16)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener {
+                if (mode.startsWith("SETUP") || mode.startsWith("CONFIRM")) {
+                    tempPinBuffer = ""
+                    renderPinLockScreen("SETUP_NEW")
+                } else if (appPinCode.length == 6) {
+                    lockAuthType = "PIN"
+                    prefs.edit().putString("lock_auth_type", "PIN").apply()
+                    renderPinLockScreen("UNLOCK")
                 } else {
-                    glossyRoundBtnBg("#F1F5F9", "#CBD5E1")
+                    tempPinBuffer = ""
+                    renderPinLockScreen("SETUP_NEW")
                 }
             }
-        }
+        })
 
-        fun handleSixDigitsCompleted(code: String) {
-            when (currentStep) {
-                "UNLOCK" -> {
-                    if (code == appPinCode) {
-                        isPinUnlockedThisSession = true
-                        lastInteractionTimeMs = System.currentTimeMillis()
-                        checkServerSubscriptionAndRender()
-                        scheduleMidnightAutoExcelSaveWithSignal()
-                        checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
-                    } else {
-                        Toast.makeText(this, "❌ PIN-kod noto'g'ri!", Toast.LENGTH_SHORT).show()
-                        typedPin = ""
-                        updateDotsUI()
-                    }
-                }
-                "CHANGE_VERIFY_OLD" -> {
-                    if (code == appPinCode) {
-                        currentStep = "SETUP_FIRST"
-                        typedPin = ""
-                        tvTitle.text = "Yangi 6 xonali PIN-kod"
-                        tvSub.text = "Endi yangi 6 xonali PIN-kodni tering"
-                        updateDotsUI()
-                    } else {
-                        Toast.makeText(this, "❌ Eski PIN-kod noto'g'ri!", Toast.LENGTH_SHORT).show()
-                        typedPin = ""
-                        updateDotsUI()
-                    }
-                }
-                "SETUP_FIRST" -> {
-                    firstEnteredPin = code
-                    currentStep = "SETUP_CONFIRM"
-                    typedPin = ""
-                    tvTitle.text = "PIN-kodni tasdiqlang"
-                    tvSub.text = "Yangi 6 xonali PIN-kodni qayta tering"
-                    updateDotsUI()
-                }
-                "SETUP_CONFIRM" -> {
-                    if (code == firstEnteredPin) {
-                        appPinCode = code
-                        isPinUnlockedThisSession = true
-                        lastInteractionTimeMs = System.currentTimeMillis()
-                        saveSessionSynchronously(true)
-                        Toast.makeText(this, "✅ PIN-kod saqlandi!", Toast.LENGTH_SHORT).show()
-                        checkServerSubscriptionAndRender()
-                        scheduleMidnightAutoExcelSaveWithSignal()
-                        checkDueDatesAndSendAutoSmsForClientsAndSuppliers()
-                    } else {
-                        Toast.makeText(this, "❌ PIN-kodlar mos kelmadi!", Toast.LENGTH_SHORT).show()
-                        currentStep = "SETUP_FIRST"
-                        firstEnteredPin = ""
-                        typedPin = ""
-                        tvTitle.text = "Yangi 6 xonali PIN-kod"
-                        tvSub.text = "6 ta raqam tanlang"
-                        updateDotsUI()
-                    }
-                }
-            }
-        }
-
-        fun appendDigit(d: String) {
-            if (typedPin.length < 6) {
-                typedPin += d
-                updateDotsUI()
-                if (typedPin.length == 6) {
-                    handleSixDigitsCompleted(typedPin)
-                }
-            }
-        }
-
-        fun removeLastDigit() {
-            if (typedPin.isNotEmpty()) {
-                typedPin = typedPin.dropLast(1)
-                updateDotsUI()
-            }
-        }
-
-        val keypadGrid = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        switchRow.addView(TextView(this).apply {
+            text = "🕸  Chizma parol"
             gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
+            textSize = 13.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(if (isPatternActive) Color.WHITE else Color.parseColor("#1E293B"))
+            background = if (isPatternActive) glossyPurpleGrad(26f) else null
+            setPadding(16, 16, 16, 16)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener {
+                if (mode.startsWith("SETUP") || mode.startsWith("CONFIRM")) {
+                    tempPatternBuffer = ""
+                    renderPinLockScreen("SETUP_PATTERN")
+                } else if (appPatternCode.isNotEmpty()) {
+                    lockAuthType = "PATTERN"
+                    prefs.edit().putString("lock_auth_type", "PATTERN").apply()
+                    renderPinLockScreen("UNLOCK")
+                } else {
+                    Toast.makeText(this@MainActivity, "Yangi Chizma parol chizib o'rnating!", Toast.LENGTH_SHORT).show()
+                    tempPatternBuffer = ""
+                    renderPinLockScreen("SETUP_PATTERN")
+                }
+            }
+        })
+        fullScreenPage.addView(switchRow)
 
-        val rows = listOf(
-            listOf("1", "2", "3"),
-            listOf("4", "5", "6"),
-            listOf("7", "8", "9"),
-            listOf("👆", "0", "⌫")
-        )
+        if (isPatternActive) {
+            val patternHolder = FrameLayout(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    0,
+                    1f
+                ).apply { topMargin = 6; bottomMargin = 14 }
+            }
 
-        rows.forEach { r ->
-            val rLayout = LinearLayout(this).apply {
+            lateinit var patternView: FullPatternLockView
+            patternView = FullPatternLockView(this) { drawnPattern ->
+                val count = drawnPattern.split("-").size
+                if (count < 4) {
+                    Toast.makeText(this@MainActivity, "⚠️ Kamida 4 ta nuqtani ulang!", Toast.LENGTH_SHORT).show()
+                    patternView.showErrorAndReset()
+                    return@FullPatternLockView
+                }
+                when (mode) {
+                    "SETUP_PATTERN" -> {
+                        tempPatternBuffer = drawnPattern
+                        renderPinLockScreen("CONFIRM_PATTERN")
+                    }
+                    "CONFIRM_PATTERN" -> {
+                        if (drawnPattern == tempPatternBuffer) {
+                            appPatternCode = drawnPattern
+                            lockAuthType = "PATTERN"
+                            isPinSecurityEnabled = true
+                            prefs.edit()
+                                .putString("app_pattern_code", appPatternCode)
+                                .putString("lock_auth_type", "PATTERN")
+                                .putBoolean("pin_security_enabled", true)
+                                .apply()
+                            Toast.makeText(this@MainActivity, "✅ Chizma parol saqlandi!", Toast.LENGTH_SHORT).show()
+                            isPinUnlockedThisSession = true
+                            renderMainWorkspace()
+                        } else {
+                            Toast.makeText(this@MainActivity, "❌ Chizmalar mos kelmadi! Qaytadan chizing.", Toast.LENGTH_LONG).show()
+                            tempPatternBuffer = ""
+                            patternView.showErrorAndReset()
+                            renderPinLockScreen("SETUP_PATTERN")
+                        }
+                    }
+                    else -> {
+                        if (drawnPattern == appPatternCode) {
+                            isPinUnlockedThisSession = true
+                            renderMainWorkspace()
+                        } else {
+                            Toast.makeText(this@MainActivity, "❌ Chizma parol noto'g'ri!", Toast.LENGTH_SHORT).show()
+                            patternView.showErrorAndReset()
+                        }
+                    }
+                }
+            }.apply {
+                background = glossyCard("#FFFFFF", "#E2E8F8", 44f)
+                elevation = 6f
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    Gravity.CENTER
+                )
+            }
+            patternHolder.addView(patternView)
+            fullScreenPage.addView(patternHolder)
+
+            val bioBar = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                background = glossyPurpleGrad(32f)
+                setPadding(28, 22, 28, 22)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                setOnClickListener { triggerBiometricPromptForUnlock() }
+            }
+            bioBar.addView(ImageView(this).apply {
+                setImageResource(R.drawable.ic_fingerprint_vec)
+                layoutParams = LinearLayout.LayoutParams(54, 54).apply { rightMargin = 16 }
+            })
+            bioBar.addView(TextView(this).apply {
+                text = "Barmoq izi / Face ID orqali ochish"
+                setTextColor(Color.WHITE)
+                textSize = 14.5f
+                setTypeface(null, Typeface.BOLD)
+            })
+            fullScreenPage.addView(bioBar)
+
+        } else {
+            val dotsRow = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = 14 }
+                ).apply { topMargin = 4; bottomMargin = 14 }
             }
-            r.forEach { keyLabel ->
-                val isBio = (keyLabel == "👆")
-                val btnKey = TextView(this).apply {
-                    text = keyLabel
-                    gravity = Gravity.CENTER
-                    setTextColor(if (isBio) Color.WHITE else Color.parseColor("#0F172A"))
-                    textSize = 15.5f
-                    setTypeface(null, Typeface.BOLD)
-                    background = if (isBio) glossyPurpleGrad(70f) else glossyRoundBtnBg("#F8FAFC", "#E2E8F0")
-                    elevation = 3f
-                    layoutParams = LinearLayout.LayoutParams(96, 96).apply { setMargins(16, 0, 16, 0) }
-                    setOnClickListener {
-                        when (keyLabel) {
-                            "⌫" -> removeLastDigit()
-                            "👆" -> {
-                                if (currentStep == "UNLOCK") {
-                                    triggerBiometricPromptForUnlock()
-                                } else {
-                                    Toast.makeText(this@MainActivity, "Avval 6 xonali PIN-kodni tering!", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                            else -> appendDigit(keyLabel)
+            val dotViews = mutableListOf<View>()
+            for (i in 0 until 6) {
+                val dot = View(this).apply {
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(Color.parseColor("#E2E8F0"))
+                        setStroke(3, Color.parseColor("#94A3B8"))
+                    }
+                    layoutParams = LinearLayout.LayoutParams(44, 44).apply { setMargins(14, 0, 14, 0) }
+                }
+                dotViews.add(dot)
+                dotsRow.addView(dot)
+            }
+            fullScreenPage.addView(dotsRow)
+
+            var enteredPin = ""
+
+            fun updateDots() {
+                for (i in 0 until 6) {
+                    val filled = (i < enteredPin.length)
+                    dotViews[i].background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        if (filled) {
+                            setColor(Color.parseColor("#5946E8"))
+                            setStroke(3, Color.parseColor("#3677F5"))
+                        } else {
+                            setColor(Color.parseColor("#E2E8F0"))
+                            setStroke(3, Color.parseColor("#94A3B8"))
                         }
                     }
                 }
-                rLayout.addView(btnKey)
             }
-            keypadGrid.addView(rLayout)
-        }
-        cardBox.addView(keypadGrid)
 
-        if (mode == "CHANGE_VERIFY_OLD") {
-            cardBox.addView(Button(this).apply {
-                text = "⬅ Bekor qilish"
-                setTextColor(Color.parseColor("#475569"))
-                textSize = 12.5f
-                background = glossyCard("#F1F5F9", "#CBD5E1", 22f)
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, 90).apply { topMargin = 10 }
-                setPadding(32, 0, 32, 0)
-                setOnClickListener { renderMainWorkspace() }
-            })
+            fun handlePinDone() {
+                if (mode == "SETUP_NEW") {
+                    tempPinBuffer = enteredPin
+                    renderPinLockScreen("CONFIRM_NEW")
+                } else if (mode == "CONFIRM_NEW") {
+                    if (enteredPin == tempPinBuffer) {
+                        appPinCode = enteredPin
+                        lockAuthType = "PIN"
+                        isPinSecurityEnabled = true
+                        prefs.edit()
+                            .putString("app_pin_code", appPinCode)
+                            .putString("lock_auth_type", "PIN")
+                            .putBoolean("pin_security_enabled", true)
+                            .apply()
+                        Toast.makeText(this@MainActivity, "✅ PIN-kod saqlandi!", Toast.LENGTH_SHORT).show()
+                        isPinUnlockedThisSession = true
+                        renderMainWorkspace()
+                    } else {
+                        Toast.makeText(this@MainActivity, "❌ Kodlar mos kelmadi! Qaytadan tering.", Toast.LENGTH_LONG).show()
+                        tempPinBuffer = ""
+                        renderPinLockScreen("SETUP_NEW")
+                    }
+                } else {
+                    if (enteredPin == appPinCode) {
+                        isPinUnlockedThisSession = true
+                        renderMainWorkspace()
+                    } else {
+                        Toast.makeText(this@MainActivity, "❌ PIN-kod noto'g'ri!", Toast.LENGTH_SHORT).show()
+                        enteredPin = ""
+                        updateDots()
+                    }
+                }
+            }
+
+            // BUTUN QOLGAN EKRANNI TO'LIQ EGALLOVCHI (weight = 1f) RAQAMLAR PANELI
+            val keypadGrid = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    0,
+                    1f
+                )
+            }
+
+            val rows = listOf(
+                listOf("1", "2", "3"),
+                listOf("4", "5", "6"),
+                listOf("7", "8", "9"),
+                listOf("BIO", "0", "⌫")
+            )
+
+            val btnDiameter = (minOf(screenW / 3.6f, screenH / 8.0f)).toInt().coerceIn(145, 240)
+
+            rows.forEach { rVals ->
+                val rowLin = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        0,
+                        1f
+                    )
+                }
+                rVals.forEach { keyStr ->
+                    val cellFrame = FrameLayout(this).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+                    }
+                    if (keyStr == "BIO") {
+                        val bioBtn = FrameLayout(this).apply {
+                            background = glossyRoundBtnBg("#5946E8", "#3677F5")
+                            elevation = 8f
+                            layoutParams = FrameLayout.LayoutParams(btnDiameter, btnDiameter, Gravity.CENTER)
+                            addView(ImageView(this@MainActivity).apply {
+                                setImageResource(R.drawable.ic_fingerprint_vec)
+                                layoutParams = FrameLayout.LayoutParams(
+                                    (btnDiameter * 0.48f).toInt(),
+                                    (btnDiameter * 0.48f).toInt(),
+                                    Gravity.CENTER
+                                )
+                            })
+                            setOnClickListener { triggerBiometricPromptForUnlock() }
+                        }
+                        cellFrame.addView(bioBtn)
+                    } else {
+                        val numBtn = TextView(this).apply {
+                            text = keyStr
+                            gravity = Gravity.CENTER
+                            textSize = if (keyStr == "⌫") 23f else 26f
+                            setTypeface(null, Typeface.BOLD)
+                            setTextColor(Color.parseColor("#0F172A"))
+                            background = glossyRoundBtnBg("#FFFFFF", "#CBD5E1")
+                            elevation = 6f
+                            layoutParams = FrameLayout.LayoutParams(btnDiameter, btnDiameter, Gravity.CENTER)
+                            setOnClickListener {
+                                if (keyStr == "⌫") {
+                                    if (enteredPin.isNotEmpty()) {
+                                        enteredPin = enteredPin.dropLast(1)
+                                        updateDots()
+                                    }
+                                } else {
+                                    if (enteredPin.length < 6) {
+                                        enteredPin += keyStr
+                                        updateDots()
+                                        if (enteredPin.length == 6) {
+                                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                                handlePinDone()
+                                            }, 130)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        cellFrame.addView(numBtn)
+                    }
+                    rowLin.addView(cellFrame)
+                }
+                keypadGrid.addView(rowLin)
+            }
+            fullScreenPage.addView(keypadGrid)
         }
 
-        mainCol.addView(cardBox)
-        val scroll = ScrollView(this).apply { addView(mainCol) }
-        rootLayout.addView(scroll)
-
-        if (currentStep == "UNLOCK" && isBiometricEnabled) {
-            mainCol.postDelayed({
-                triggerBiometricPromptForUnlock()
-            }, 300)
-        }
+        rootLayout.addView(fullScreenPage)
     }
 
     private fun triggerBiometricPromptForUnlock() {
@@ -6103,66 +6511,72 @@ $sheetsXml  </sheets>
         val sheet = BottomSheetDialog(this)
         val wrap = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = glossyCard("#131C31", "#00F5D4", 48f)
-            setPadding(42, 32, 42, 52)
+            background = glossyCard("#FFFFFF", "#E2E8F8", 42f)
+            setPadding(32, 28, 32, 44)
         }
-
         wrap.addView(TextView(this).apply {
-            text = "🔐 PIN-kod, Biometrik va Avto-Lock"
-            setTextColor(Color.parseColor("#5B4CFF"))
-            textSize = 15.5f
+            text = "🔐 Xavfsizlik: PIN-kod, Chizma parol va Biometrika"
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 18f
             setTypeface(null, Typeface.BOLD)
-            setPadding(0, 0, 0, 18)
+            setPadding(0, 0, 0, 14)
         })
 
-        val pinStatus = if (appPinCode.length == 6) "✅ O'rnatilgan (6 xonali)" else "🔴 O'rnatilmagan"
-        val bioStatus = if (isBiometricEnabled) "✅ Yoqilgan" else "🔴 O'chirilgan"
-        val lockTimeStr = autoLockLabel(autoLockTimeoutMs)
+        val swPin = Switch(this).apply {
+            text = "Dasturga kirishda Qulfni (PIN / Chizma) yoqish"
+            isChecked = isPinSecurityEnabled
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 14f
+            setPadding(8, 16, 8, 16)
+            setOnCheckedChangeListener { _, chk ->
+                isPinSecurityEnabled = chk
+                prefs.edit().putBoolean("pin_security_enabled", chk).apply()
+            }
+        }
+        wrap.addView(swPin)
+
+        val swBio = Switch(this).apply {
+            text = "Barmoq izi / Face ID orqali kirish"
+            isChecked = isBiometricEnabled
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 14f
+            setPadding(8, 16, 8, 22)
+            setOnCheckedChangeListener { _, chk ->
+                isBiometricEnabled = chk
+                prefs.edit().putBoolean("biometric_enabled", chk).apply()
+            }
+        }
+        wrap.addView(swBio)
 
         wrap.addView(TextView(this).apply {
-            text = "📌 PIN-kod: $pinStatus\n👆 Face ID / Barmoq izi: $bioStatus\n⏱ Avtomatik Lock vaqti: $lockTimeStr"
-            setTextColor(Color.parseColor("#1E293B"))
-            textSize = 13.5f
-            setPadding(0, 0, 0, 24)
-        })
-
-        wrap.addView(Button(this).apply {
-            text = "🔄 6 xonali PIN-kodni o'zgartirish (Eski PIN bilan)"
+            text = "🔢  6-xonali PIN-kod o'rnatish / o'zgartirish"
+            gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            background = glossyPurpleGrad(30f)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 92).apply { bottomMargin = 14 }
+            textSize = 14.5f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyPurpleGrad(28f)
+            setPadding(24, 24, 24, 24)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 12 }
             setOnClickListener {
                 sheet.dismiss()
-                if (appPinCode.length == 6) {
-                    renderPinLockScreen(mode = "CHANGE_VERIFY_OLD")
-                } else {
-                    renderPinLockScreen(mode = "SETUP_NEW")
-                }
+                tempPinBuffer = ""
+                renderPinLockScreen("SETUP_NEW")
             }
         })
 
-        wrap.addView(Button(this).apply {
-            text = "⏱ Avtomatik Lock vaqti: $lockTimeStr (O'zgartirish)"
+        wrap.addView(TextView(this).apply {
+            text = "🕸  3x3 Chizma parol (Grafik kalit) o'rnatish"
+            gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            background = glossyOrangeGrad(30f)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 92).apply { bottomMargin = 14 }
+            textSize = 14.5f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyOrangeGrad(28f)
+            setPadding(24, 24, 24, 24)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 10 }
             setOnClickListener {
                 sheet.dismiss()
-                showAutoLockTimerSelectionDialog()
-            }
-        })
-
-        wrap.addView(Button(this).apply {
-            text = if (isBiometricEnabled) "👆 Face ID / Barmoq izini O'chirish" else "👆 Face ID / Barmoq izini Yoqish"
-            setTextColor(Color.parseColor("#5B4CFF"))
-            background = glossyCard("#1E293B", "#00F5D4", 30f)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 92)
-            setOnClickListener {
-                isBiometricEnabled = !isBiometricEnabled
-                saveSessionSynchronously(isLoggedIn)
-                sheet.dismiss()
-                Toast.makeText(this@MainActivity, if (isBiometricEnabled) "✅ Face ID / Barmoq izi yoqildi!" else "🔴 O'chirildi", Toast.LENGTH_SHORT).show()
-                showPinAndBiometricSettingsDialog()
+                tempPatternBuffer = ""
+                renderPinLockScreen("SETUP_PATTERN")
             }
         })
 
@@ -6218,7 +6632,7 @@ $sheetsXml  </sheets>
 
     private fun showDeveloperDialog() {
         AlertDialog.Builder(this).setTitle("👨‍💻 Dastur haqida")
-            .setMessage("Ilova: QarzFy v11.0 (Glossy Glassmorphism)\nDasturchi: Hasan Jaylovov\nTelegram: @HasanJaylovov")
+            .setMessage("Ilova: QarzFy v11.0 (Glossy Glassmorphism)\nDasturchi: $ownerName\nTelegram: @HasanJaylovov")
             .setPositiveButton("Bog'lanish") { _, _ ->
                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/HasanJaylovov")))
             }.setNegativeButton("Yopish", null).show()
