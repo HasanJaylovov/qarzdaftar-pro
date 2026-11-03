@@ -620,6 +620,15 @@ class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_m
 }
 
 class MainActivity : AppCompatActivity() {
+    private fun speakDebtReminderUzbek(clientName: String, amount: Long, dueDate: String) {
+        // Ovozli eslatma sintezi
+    }
+
+    private var isAutoSmsEnabled = true
+    private var isPinSecurityEnabled = true
+    private var isBiometricEnabled = true
+    private var isPinUnlockedThisSession = false
+
     private var ownerName = ""
 
     private val SERVER_URL = "https://hasanjaylovov.pythonanywhere.com"
