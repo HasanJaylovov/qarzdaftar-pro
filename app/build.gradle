@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 212
-        versionName "21.2-FixPatternTouchCrashAndStoreSelector"
+        versionCode 213
+        versionName "21.3-CompleteAuthAndPatternFix"
     }
 
     buildTypes {
