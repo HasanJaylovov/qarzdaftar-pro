@@ -632,7 +632,7 @@ class MainActivity : AppCompatActivity() {
 
     private var isLoggedIn = false
     private var storeId = "QF-101"
-    private var storeName = "Hasan Jaylovov"
+    private var storeName = ""
     private var storeAddress = "O'zbekiston, Surxondaryo"
     private var storeCategory = "Qurilish mollari"
     private var mainCurrency = "UZS"
@@ -786,7 +786,7 @@ class MainActivity : AppCompatActivity() {
         userPhone = prefs.getString("user_phone", "") ?: ""
         userPassword = prefs.getString("user_password", "") ?: ""
         storeId = prefs.getString("store_id", "QF-101") ?: "QF-101"
-        storeName = prefs.getString("store_name", "Hasan Jaylovov") ?: "Hasan Jaylovov"
+        storeName = prefs.getString("store_name", "") ?: ""
         storeAddress = prefs.getString("store_address", "O'zbekiston") ?: "O'zbekiston"
         storeCategory = prefs.getString("store_category", "Qurilish mollari") ?: "Qurilish mollari"
         mainCurrency = prefs.getString("main_currency", "UZS") ?: "UZS"
@@ -905,7 +905,7 @@ class MainActivity : AppCompatActivity() {
         db.getPersons(isSupplier = false).forEach { c ->
             if (c.balUzs != 0L && isDateDueOrOverdue(c.dueDate)) {
                 val amtStr = formatMoney(Math.abs(c.balUzs), "so'm")
-                val msg = "Hurmatli ${c.name}, $storeName do'konidan $amtStr qarzingizni to'lash muddati (${c.dueDate}) keldi. Iltimos, to'lovni amalga oshiring."
+                val msg = "Hurmatli ${c.name}, ${storeTitleWithLocativeSuffix()}n $amtStr qarzingizni to'lash muddati (${c.dueDate}) keldi. Iltimos, to'lovni amalga oshiring."
                 sendAutoSms(c.phone, msg)
                 sentCount++
             }
@@ -1029,6 +1029,61 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+
+    private fun detectEffectiveStoreCategory(): String {
+        val savedCat = prefs.getString("store_category", storeCategory) ?: storeCategory
+        val lowerName = storeName.lowercase(Locale.getDefault())
+        return when {
+            savedCat.contains("Dorixona", ignoreCase = true) || lowerName.contains("dorixona") || lowerName.contains("apteka") || lowerName.contains("farm") || lowerName.contains("shifo") -> "Dorixona"
+            savedCat.contains("Qurilish", ignoreCase = true) || lowerName.contains("qurilish") || lowerName.contains("stroy") || lowerName.contains("xo'jalik") || lowerName.contains("sement") -> "Qurilish mollari do'koni"
+            else -> "Do'kon"
+        }
+    }
+
+    private fun storeTitleWithLocativeSuffix(): String {
+        val cat = detectEffectiveStoreCategory()
+        val cleanStore = storeName.trim().ifEmpty { cat }
+        val lowerStore = cleanStore.lowercase(Locale.getDefault())
+        return when (cat) {
+            "Dorixona" -> {
+                if (lowerStore.endsWith("dorixona")) "$cleanStore" + "sida"
+                else if (lowerStore.endsWith("dorixonasi")) "$cleanStore" + "da"
+                else "$cleanStore dorixonasida"
+            }
+            "Qurilish mollari do'koni" -> {
+                if (lowerStore.contains("qurilish")) "$cleanStore do'konida"
+                else "$cleanStore qurilish mollari do'konida"
+            }
+            else -> {
+                if (lowerStore.endsWith("do'kon") || lowerStore.endsWith("dokon")) "$cleanStore" + "ida"
+                else if (lowerStore.endsWith("do'koni") || lowerStore.endsWith("dokoni")) "$cleanStore" + "da"
+                else "$cleanStore do'konida"
+            }
+        }
+    }
+
+    private fun storeTitleWithAblativeSuffix(): String {
+        val cat = detectEffectiveStoreCategory()
+        val cleanStore = storeName.trim().ifEmpty { cat }
+        val lowerStore = cleanStore.lowercase(Locale.getDefault())
+        return when (cat) {
+            "Dorixona" -> {
+                if (lowerStore.endsWith("dorixona")) "$cleanStore" + "sidagi"
+                else if (lowerStore.endsWith("dorixonasi")) "$cleanStore" + "dagi"
+                else "$cleanStore dorixonasidagi"
+            }
+            "Qurilish mollari do'koni" -> {
+                if (lowerStore.contains("qurilish")) "$cleanStore do'konidagi"
+                else "$cleanStore qurilish mollari do'konidagi"
+            }
+            else -> {
+                if (lowerStore.endsWith("do'kon") || lowerStore.endsWith("dokon")) "$cleanStore" + "idagi"
+                else if (lowerStore.endsWith("do'koni") || lowerStore.endsWith("dokoni")) "$cleanStore" + "dagi"
+                else "$cleanStore do'konidagi"
+            }
+        }
+    }
+
     private fun triggerBackgroundSmsAndVoiceCall(clientName: String, phoneNumber: String, amount: Long, kind: String, note: String, dueDate: String = "", isSupplier: Boolean = false, currency: String = "UZS") {
         val personRecord = db.getPersonByName(clientName, isSupplier)
         var cleanPhone = normalizeUzPhone(phoneNumber)
@@ -1051,17 +1106,17 @@ class MainActivity : AppCompatActivity() {
 
         val smsText = when {
             kind == "ToliqYopildi" -> {
-                "Hurmatli $clientName, siz $storeName do'konidagi qarzingizni ($fmtAmt) to'liq to'ladingiz. Qolgan umumiy qarzingiz: $combinedRemaining. Rahmat!"
+                "Hurmatli $clientName, siz ${storeTitleWithAblativeSuffix()} qarzingizni ($fmtAmt) to'liq to'ladingiz. Qolgan umumiy qarzingiz: $combinedRemaining. Rahmat!"
             }
             kind == "Yopildi" -> {
-                "Hurmatli $clientName, $storeName do'konidagi $fmtAmt qarzingiz yopildi ($note). Qolgan umumiy qarzingiz: $combinedRemaining. Rahmat!"
+                "Hurmatli $clientName, ${storeTitleWithAblativeSuffix()} $fmtAmt qarzingiz yopildi ($note). Qolgan umumiy qarzingiz: $combinedRemaining. Rahmat!"
             }
             kind == "Kirim" -> {
-                "Hurmatli $clientName, $storeName do'konidagi qarzingizdan $fmtAmt to'lov qabul qilindi. Qolgan umumiy qarzingiz: $combinedRemaining. Rahmat!"
+                "Hurmatli $clientName, ${storeTitleWithAblativeSuffix()} qarzingizdan $fmtAmt to'lov qabul qilindi. Qolgan umumiy qarzingiz: $combinedRemaining. Rahmat!"
             }
             else -> {
                 val prodInfo = if (note.isNotBlank()) "Olingan mahsulot/izoh: $note. " else ""
-                "Hurmatli $clientName, $storeName do'konida sizga $fmtAmt yangi qarz yozildi. ${prodInfo}Jami umumiy qarzingiz: $combinedRemaining.$duePart"
+                "Hurmatli $clientName, ${storeTitleWithLocativeSuffix()} sizga $fmtAmt yangi qarz yozildi. ${prodInfo}Jami umumiy qarzingiz: $combinedRemaining.$duePart"
             }
         }
 
@@ -1606,7 +1661,7 @@ class MainActivity : AppCompatActivity() {
                     } else {
                         userPhone = ph
                         userPassword = pw
-                        storeName = defaultStore.ifEmpty { "Hasan Jaylovov" }
+                        storeName = defaultStore.ifEmpty { "" }
                         storeAddress = defaultAddr.ifEmpty { "O'zbekiston" }
                         storeId = "QF-" + Math.abs(ph.hashCode() % 90000 + 10000)
                         if (subscriptionExpiryMillis <= 0L) {
@@ -3231,7 +3286,7 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     "Joriy qarzingiz: 0 so'm."
                 }
-                val smsMsg = "Hurmatli $newNm, $storeName do'konidagi mijoz ma'lumotlaringiz yangilandi. $balText"
+                val smsMsg = "Hurmatli $newNm, ${storeTitleWithAblativeSuffix()} mijoz ma'lumotlaringiz yangilandi. $balText"
                 sendAutoSms(newPh, smsMsg)
 
                 Toast.makeText(this@MainActivity, "✅ Mijoz ma'lumotlari saqlandi va $newPh raqamiga SMS yuborildi!", Toast.LENGTH_LONG).show()
@@ -3463,7 +3518,7 @@ class MainActivity : AppCompatActivity() {
         actionCirclesRow.addView(contactCircle("💬", "#F97316") {
             val remUzs = Math.abs(client.balUzs)
             val remUsd = Math.abs(client.balUsd.toLong())
-            val msg = "Hurmatli ${client.name}, $storeName do'konida qolgan umumiy qarzingiz: ${formatMoney(remUzs, "so'm")}${if (remUsd > 0) " va ${formatMoney(remUsd, "USD")}" else ""}."
+            val msg = "Hurmatli ${client.name}, ${storeTitleWithLocativeSuffix()} qolgan umumiy qarzingiz: ${formatMoney(remUzs, "so'm")}${if (remUsd > 0) " va ${formatMoney(remUsd, "USD")}" else ""}."
             sendAutoSms(client.phone, msg)
             Toast.makeText(this, "📩 SMS yuborildi!", Toast.LENGTH_SHORT).show()
         })

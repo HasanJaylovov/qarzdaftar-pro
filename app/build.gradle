@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 208
-        versionName "20.8-TransactionDateTimeAndSumSort"
+        versionCode 209
+        versionName "20.9-FullScreenPatternAndStoreTypes"
     }
 
     buildTypes {
