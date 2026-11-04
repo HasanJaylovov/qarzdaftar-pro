@@ -349,6 +349,90 @@ class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_m
         onDataChangedCallback?.invoke()
     }
 
+    fun insertOrUpdatePerson(name: String, phone: String, balUzs: Long, balUsd: Double, isSupplier: Boolean, dueDate: String) {
+        val cleanName = name.trim()
+        if (cleanName.isEmpty()) return
+        val db = writableDatabase
+        val supFlag = if (isSupplier) 1 else 0
+        val c = db.rawQuery(
+            "SELECT id FROM clients WHERE LOWER(name) = LOWER(?) AND is_supplier = ? LIMIT 1",
+            arrayOf(cleanName, supFlag.toString())
+        )
+        val exists = c.moveToFirst()
+        val existingId = if (exists) c.getInt(0) else -1
+        c.close()
+
+        val cv = ContentValues().apply {
+            put("name", cleanName)
+            put("phone", phone)
+            put("bal_uzs", balUzs)
+            put("bal_usd", balUsd)
+            put("is_supplier", supFlag)
+            put("due_date", dueDate.ifEmpty { "Muddat yo'q" })
+        }
+        if (exists && existingId != -1) {
+            db.update("clients", cv, "id = ?", arrayOf(existingId.toString()))
+        } else {
+            db.insert("clients", null, cv)
+        }
+    }
+
+    fun insertTransactionDirect(
+        txId: String,
+        personName: String,
+        personPhone: String,
+        kind: String,
+        amount: Long,
+        currency: String,
+        note: String,
+        date: String,
+        dueDate: String,
+        status: String,
+        isSupplier: Boolean
+    ) {
+        val cleanName = personName.trim()
+        if (cleanName.isEmpty()) return
+        val db = writableDatabase
+        val supFlag = if (isSupplier) 1 else 0
+        val finalTxId = txId.ifEmpty { "D-" + (100000 + Random().nextInt(900000)) }
+
+        val c = db.rawQuery("SELECT id FROM transactions WHERE tx_id = ? LIMIT 1", arrayOf(finalTxId))
+        val exists = c.moveToFirst()
+        c.close()
+        if (exists) return
+
+        val cv = ContentValues().apply {
+            put("tx_id", finalTxId)
+            put("kind", kind)
+            put("person_name", cleanName)
+            put("person_phone", personPhone)
+            put("amount", Math.abs(amount))
+            put("currency", currency.ifEmpty { "UZS" })
+            put("note", note)
+            put("date", date)
+            put("due_date", dueDate)
+            put("status", status.ifEmpty { "Faol" })
+            put("is_supplier", supFlag)
+        }
+        db.insert("transactions", null, cv)
+    }
+
+    fun insertKassaDirect(type: String, category: String, amount: Long, currency: String, payType: String, date: String, note: String, creator: String) {
+        if (amount <= 0L) return
+        val db = writableDatabase
+        val cv = ContentValues().apply {
+            put("type", type.ifEmpty { "Kirim" })
+            put("category", category)
+            put("amount", amount)
+            put("currency", currency.ifEmpty { "UZS" })
+            put("pay_type", payType.ifEmpty { "Naqd" })
+            put("date", date)
+            put("note", note)
+            put("creator", creator.ifEmpty { "Avto" })
+        }
+        db.insert("kassa", null, cv)
+    }
+
     fun deletePersonFromRegistryCompletely(personName: String, isSupplier: Boolean) {
         val db = writableDatabase
         val supFlag = if (isSupplier) 1 else 0
@@ -820,7 +904,7 @@ class MainActivity : AppCompatActivity() {
             val pubDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "QarzFy")
             val backupFile = File(pubDir, "QarzFy_AvtoBazasi.xlsx")
             if (backupFile.exists() && backupFile.length() > 100) {
-                parseXlsxZipBytes(backupFile.readBytes(), triggerBackup = false)
+                parseXlsxZipBytes(backupFile.readBytes())
             }
         } catch (_: Exception) {}
     }
@@ -1045,146 +1129,6 @@ class MainActivity : AppCompatActivity() {
 
 
 
-
-    private fun detectEffectiveStoreCategory(): String {
-        val savedCat = (prefs.getString("store_category", storeCategory) ?: storeCategory).trim()
-        val lowerName = storeName.lowercase(Locale.getDefault())
-        return when {
-            savedCat.contains("Dorixona", ignoreCase = true) || lowerName.contains("dorixona") || lowerName.contains("apteka") || lowerName.contains("farm") -> "Dorixona"
-            savedCat.contains("Qurilish", ignoreCase = true) || lowerName.contains("qurilish") || lowerName.contains("stroy") || lowerName.contains("sement") -> "Qurilish mollari do'koni"
-            savedCat.contains("Oshxona", ignoreCase = true) || lowerName.contains("oshxona") || lowerName.contains("kafe") || lowerName.contains("choyxona") || lowerName.contains("restoran") -> "Oshxona"
-            else -> "Do'kon"
-        }
-    }
-
-    private fun storeTitleWithLocativeSuffix(): String {
-        val cat = detectEffectiveStoreCategory()
-        val rawName = storeName.trim().ifEmpty { cat }
-        val low = rawName.lowercase(Locale.getDefault())
-        return when (cat) {
-            "Dorixona" -> {
-                when {
-                    low.endsWith("dorixona") -> "$rawName" + "sida"
-                    low.endsWith("dorixonasi") -> "$rawName" + "da"
-                    else -> "$rawName dorixonasida"
-                }
-            }
-            "Qurilish mollari do'koni" -> {
-                when {
-                    low.contains("qurilish") && low.endsWith("do'koni") -> "$rawName" + "da"
-                    low.contains("qurilish") -> "$rawName do'konida"
-                    else -> "$rawName qurilish mollari do'konida"
-                }
-            }
-            "Oshxona" -> {
-                when {
-                    low.endsWith("oshxona") -> "$rawName" + "sida"
-                    low.endsWith("oshxonasi") -> "$rawName" + "da"
-                    low.endsWith("kafe") || low.endsWith("restoran") -> "$rawName" + "da"
-                    else -> "$rawName oshxonasida"
-                }
-            }
-            else -> {
-                when {
-                    low.endsWith("do'kon") || low.endsWith("dokon") -> "$rawName" + "ida"
-                    low.endsWith("do'koni") || low.endsWith("dokoni") -> "$rawName" + "da"
-                    else -> "$rawName do'konida"
-                }
-            }
-        }
-    }
-
-    private fun storeTitleWithAblativeSuffix(): String {
-        val cat = detectEffectiveStoreCategory()
-        val rawName = storeName.trim().ifEmpty { cat }
-        val low = rawName.lowercase(Locale.getDefault())
-        return when (cat) {
-            "Dorixona" -> {
-                when {
-                    low.endsWith("dorixona") -> "$rawName" + "sidagi"
-                    low.endsWith("dorixonasi") -> "$rawName" + "dagi"
-                    else -> "$rawName dorixonasidagi"
-                }
-            }
-            "Qurilish mollari do'koni" -> {
-                when {
-                    low.contains("qurilish") -> "$rawName do'konidagi"
-                    else -> "$rawName qurilish mollari do'konidagi"
-                }
-            }
-            "Oshxona" -> {
-                when {
-                    low.endsWith("oshxona") -> "$rawName" + "sidagi"
-                    low.endsWith("oshxonasi") -> "$rawName" + "dagi"
-                    else -> "$rawName oshxonasidagi"
-                }
-            }
-            else -> {
-                when {
-                    low.endsWith("do'kon") || low.endsWith("dokon") -> "$rawName" + "idagi"
-                    low.endsWith("do'koni") || low.endsWith("dokoni") -> "$rawName" + "dagi"
-                    else -> "$rawName do'konidagi"
-                }
-            }
-        }
-    }
-
-    private fun storeTitleWithLocativeSuffix(): String {
-        val cat = detectEffectiveStoreCategory()
-        val rawName = storeName.trim().ifEmpty { cat }
-        val low = rawName.lowercase(Locale.getDefault())
-        return when (cat) {
-            "Dorixona" -> {
-                when {
-                    low.endsWith("dorixona") -> "$rawName" + "sida"
-                    low.endsWith("dorixonasi") -> "$rawName" + "da"
-                    else -> "$rawName dorixonasida"
-                }
-            }
-            "Qurilish mollari do'koni" -> {
-                when {
-                    low.contains("qurilish") && low.endsWith("do'koni") -> "$rawName" + "da"
-                    low.contains("qurilish") -> "$rawName do'konida"
-                    else -> "$rawName qurilish mollari do'konida"
-                }
-            }
-            else -> {
-                when {
-                    low.endsWith("do'kon") || low.endsWith("dokon") -> "$rawName" + "ida"
-                    low.endsWith("do'koni") || low.endsWith("dokoni") -> "$rawName" + "da"
-                    else -> "$rawName do'konida"
-                }
-            }
-        }
-    }
-
-    private fun storeTitleWithAblativeSuffix(): String {
-        val cat = detectEffectiveStoreCategory()
-        val rawName = storeName.trim().ifEmpty { cat }
-        val low = rawName.lowercase(Locale.getDefault())
-        return when (cat) {
-            "Dorixona" -> {
-                when {
-                    low.endsWith("dorixona") -> "$rawName" + "sidagi"
-                    low.endsWith("dorixonasi") -> "$rawName" + "dagi"
-                    else -> "$rawName dorixonasidagi"
-                }
-            }
-            "Qurilish mollari do'koni" -> {
-                when {
-                    low.contains("qurilish") -> "$rawName do'konidagi"
-                    else -> "$rawName qurilish mollari do'konidagi"
-                }
-            }
-            else -> {
-                when {
-                    low.endsWith("do'kon") || low.endsWith("dokon") -> "$rawName" + "idagi"
-                    low.endsWith("do'koni") || low.endsWith("dokoni") -> "$rawName" + "dagi"
-                    else -> "$rawName do'konidagi"
-                }
-            }
-        }
-    }
 
     private fun showStoreCategoryQuickSelectorDialog(onSelected: () -> Unit = {}) {
         val sheet = BottomSheetDialog(this)
@@ -4974,6 +4918,280 @@ class MainActivity : AppCompatActivity() {
         return sb.toString()
     }
 
+    private fun xmlUnescape(s: String): String {
+        return s.replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&apos;", "'")
+    }
+
+    private fun detectEffectiveStoreCategory(): String {
+        val savedCat = (prefs.getString("store_category", storeCategory) ?: storeCategory).trim()
+        val lowerName = storeName.lowercase(Locale.getDefault())
+        return when {
+            savedCat.contains("Dorixona", ignoreCase = true) || lowerName.contains("dorixona") || lowerName.contains("apteka") || lowerName.contains("farm") -> "Dorixona"
+            savedCat.contains("Qurilish", ignoreCase = true) || lowerName.contains("qurilish") || lowerName.contains("stroy") || lowerName.contains("sement") -> "Qurilish mollari do'koni"
+            savedCat.contains("Oshxona", ignoreCase = true) || lowerName.contains("oshxona") || lowerName.contains("kafe") || lowerName.contains("choyxona") || lowerName.contains("restoran") -> "Oshxona"
+            else -> "Do'kon"
+        }
+    }
+
+    private fun storeTitleWithLocativeSuffix(): String {
+        val cat = detectEffectiveStoreCategory()
+        val rawName = storeName.trim().ifEmpty { cat }
+        val low = rawName.lowercase(Locale.getDefault())
+        return when (cat) {
+            "Dorixona" -> {
+                when {
+                    low.endsWith("dorixona") -> "$rawName" + "sida"
+                    low.endsWith("dorixonasi") -> "$rawName" + "da"
+                    else -> "$rawName dorixonasida"
+                }
+            }
+            "Qurilish mollari do'koni" -> {
+                when {
+                    low.contains("qurilish") && low.endsWith("do'koni") -> "$rawName" + "da"
+                    low.contains("qurilish") -> "$rawName do'konida"
+                    else -> "$rawName qurilish mollari do'konida"
+                }
+            }
+            "Oshxona" -> {
+                when {
+                    low.endsWith("oshxona") -> "$rawName" + "sida"
+                    low.endsWith("oshxonasi") -> "$rawName" + "da"
+                    low.endsWith("kafe") || low.endsWith("restoran") -> "$rawName" + "da"
+                    else -> "$rawName oshxonasida"
+                }
+            }
+            else -> {
+                when {
+                    low.endsWith("do'kon") || low.endsWith("dokon") -> "$rawName" + "ida"
+                    low.endsWith("do'koni") || low.endsWith("dokoni") -> "$rawName" + "da"
+                    else -> "$rawName do'konida"
+                }
+            }
+        }
+    }
+
+    private fun storeTitleWithAblativeSuffix(): String {
+        val cat = detectEffectiveStoreCategory()
+        val rawName = storeName.trim().ifEmpty { cat }
+        val low = rawName.lowercase(Locale.getDefault())
+        return when (cat) {
+            "Dorixona" -> {
+                when {
+                    low.endsWith("dorixona") -> "$rawName" + "sidagi"
+                    low.endsWith("dorixonasi") -> "$rawName" + "dagi"
+                    else -> "$rawName dorixonasidagi"
+                }
+            }
+            "Qurilish mollari do'koni" -> {
+                when {
+                    low.contains("qurilish") -> "$rawName do'konidagi"
+                    else -> "$rawName qurilish mollari do'konidagi"
+                }
+            }
+            "Oshxona" -> {
+                when {
+                    low.endsWith("oshxona") -> "$rawName" + "sidagi"
+                    low.endsWith("oshxonasi") -> "$rawName" + "dagi"
+                    else -> "$rawName oshxonasidagi"
+                }
+            }
+            else -> {
+                when {
+                    low.endsWith("do'kon") || low.endsWith("dokon") -> "$rawName" + "idagi"
+                    low.endsWith("do'koni") || low.endsWith("dokoni") -> "$rawName" + "dagi"
+                    else -> "$rawName do'konidagi"
+                }
+            }
+        }
+    }
+
+    private fun parseXlsxZipBytes(bytes: ByteArray): Boolean {
+        return try {
+            val zis = ZipInputStream(ByteArrayInputStream(bytes))
+            var entry = zis.nextEntry
+            val sheetMap = mutableMapOf<String, MutableList<List<String>>>()
+            val sharedStrings = mutableListOf<String>()
+
+            val allEntries = mutableMapOf<String, ByteArray>()
+            while (entry != null) {
+                allEntries[entry.name] = zis.readBytes()
+                entry = zis.nextEntry
+            }
+            zis.close()
+
+            val ssBytes = allEntries["xl/sharedStrings.xml"]
+            if (ssBytes != null) {
+                val ssXml = String(ssBytes, Charsets.UTF_8)
+                val matcher = java.util.regex.Pattern.compile("<t[^>]*>(.*?)</t>", java.util.regex.Pattern.DOTALL).matcher(ssXml)
+                while (matcher.find()) {
+                    sharedStrings.add(xmlUnescape(matcher.group(1) ?: ""))
+                }
+            }
+
+            val wbBytes = allEntries["xl/workbook.xml"]
+            val sheetNames = mutableListOf<String>()
+            if (wbBytes != null) {
+                val wbXml = String(wbBytes, Charsets.UTF_8)
+                val mSheet = java.util.regex.Pattern.compile("<sheet[^>]*name=\"([^\"]+)\"", java.util.regex.Pattern.DOTALL).matcher(wbXml)
+                while (mSheet.find()) {
+                    sheetNames.add(xmlUnescape(mSheet.group(1) ?: ""))
+                }
+            }
+
+            for (i in 1..6) {
+                val sBytes = allEntries["xl/worksheets/sheet$i.xml"] ?: continue
+                val sName = if (i - 1 < sheetNames.size) sheetNames[i - 1] else "Sheet$i"
+                val sXml = String(sBytes, Charsets.UTF_8)
+                val rows = mutableListOf<List<String>>()
+
+                val rowMatcher = java.util.regex.Pattern.compile("<row[^>]*>(.*?)</row>", java.util.regex.Pattern.DOTALL).matcher(sXml)
+                while (rowMatcher.find()) {
+                    val rowContent = rowMatcher.group(1) ?: ""
+                    val rowVals = mutableListOf<String>()
+                    val cellMatcher = java.util.regex.Pattern.compile("<c[^>]*r=\"([A-Z]+)[0-9]+\"[^>]*>(.*?)</c>", java.util.regex.Pattern.DOTALL).matcher(rowContent)
+                    val cellMap = mutableMapOf<String, String>()
+                    while (cellMatcher.find()) {
+                        val col = cellMatcher.group(1) ?: ""
+                        val cBody = cellMatcher.group(2) ?: ""
+                        var cellVal = ""
+                        if (cBody.contains("<is><t>")) {
+                            val tm = java.util.regex.Pattern.compile("<t[^>]*>(.*?)</t>", java.util.regex.Pattern.DOTALL).matcher(cBody)
+                            if (tm.find()) cellVal = xmlUnescape(tm.group(1) ?: "")
+                        } else if (cBody.contains("<v>")) {
+                            val vm = java.util.regex.Pattern.compile("<v>(.*?)</v>").matcher(cBody)
+                            if (vm.find()) {
+                                val rawNum = vm.group(1) ?: ""
+                                cellVal = if (cellMatcher.group(0)?.contains("t=\"s\"") == true) {
+                                    val idx = rawNum.toIntOrNull() ?: 0
+                                    if (idx < sharedStrings.size) sharedStrings[idx] else rawNum
+                                } else {
+                                    rawNum
+                                }
+                            }
+                        }
+                        cellMap[col] = cellVal
+                    }
+                    val colLetters = arrayOf("A", "B", "C", "D", "E", "F", "G", "H", "I")
+                    for (cl in colLetters) {
+                        rowVals.add(cellMap[cl] ?: "")
+                    }
+                    rows.add(rowVals)
+                }
+                sheetMap[sName] = rows
+            }
+
+            // 1. Mijozlar
+            val clientRows = sheetMap["Mijozlar"] ?: sheetMap.values.firstOrNull()
+            if (clientRows != null && clientRows.size > 1) {
+                for (r in 1 until clientRows.size) {
+                    val row = clientRows[r]
+                    val name = row.getOrNull(1)?.trim() ?: ""
+                    val phone = row.getOrNull(2)?.trim() ?: ""
+                    val balUsd = row.getOrNull(3)?.toDoubleOrNull() ?: 0.0
+                    val balUzs = row.getOrNull(4)?.toDoubleOrNull()?.toLong() ?: 0L
+                    val dateStr = row.getOrNull(5)?.trim() ?: ""
+                    if (name.isNotEmpty() && !name.equals("Ism", ignoreCase = true)) {
+                        db.insertOrUpdatePerson(name, phone, balUzs, balUsd, false, dateStr)
+                    }
+                }
+            }
+
+            // 2. Tranzaksiyalar (Mijozlar)
+            val txRows = sheetMap["Tranzaksiyalar"]
+            if (txRows != null && txRows.size > 1) {
+                for (r in 1 until txRows.size) {
+                    val row = txRows[r]
+                    val txId = row.getOrNull(0)?.trim() ?: ""
+                    val kind = row.getOrNull(1)?.trim() ?: "Chiqim"
+                    val pName = row.getOrNull(2)?.trim() ?: ""
+                    val pPhone = row.getOrNull(3)?.trim() ?: ""
+                    val amt = row.getOrNull(4)?.toDoubleOrNull()?.toLong() ?: 0L
+                    val cur = row.getOrNull(5)?.trim() ?: "UZS"
+                    val date = row.getOrNull(6)?.trim() ?: ""
+                    val rawDesc = row.getOrNull(7)?.trim() ?: ""
+                    val st = row.getOrNull(8)?.trim() ?: "Faol"
+
+                    var dueDate = ""
+                    var cleanNote = rawDesc
+                    if (rawDesc.contains("(Muddat:")) {
+                        val mDue = java.util.regex.Pattern.compile("\\(Muddat:\\s*([^\\)]+)\\)").matcher(rawDesc)
+                        if (mDue.find()) {
+                            dueDate = mDue.group(1)?.trim() ?: ""
+                        }
+                        cleanNote = rawDesc.substringBefore("(Muddat:").trim()
+                    }
+                    if (pName.isNotEmpty() && amt != 0L && !pName.equals("Mijoz ismi", ignoreCase = true)) {
+                        db.insertTransactionDirect(txId, pName, pPhone, kind, amt, cur, cleanNote, date, dueDate, st, false)
+                    }
+                }
+            }
+
+            // 3. Ta'minotchilar
+            val supRows = sheetMap["Ta'minotchilar"] ?: sheetMap["Taminotchilar"]
+            if (supRows != null && supRows.size > 1) {
+                for (r in 1 until supRows.size) {
+                    val row = supRows[r]
+                    val name = row.getOrNull(1)?.trim() ?: ""
+                    val phone = row.getOrNull(2)?.trim() ?: ""
+                    val balUsd = row.getOrNull(3)?.toDoubleOrNull() ?: 0.0
+                    val balUzs = row.getOrNull(4)?.toDoubleOrNull()?.toLong() ?: 0L
+                    val dateStr = row.getOrNull(6)?.trim() ?: ""
+                    if (name.isNotEmpty() && !name.equals("Ism", ignoreCase = true)) {
+                        db.insertOrUpdatePerson(name, phone, balUzs, balUsd, true, dateStr)
+                    }
+                }
+            }
+
+            // 4. Ta'minotchi tranzaksiyalari
+            val supTxRows = sheetMap["Ta'minotchi tranzaksiyalari"] ?: sheetMap["Taminotchi tranzaksiyalar"]
+            if (supTxRows != null && supTxRows.size > 1) {
+                for (r in 1 until supTxRows.size) {
+                    val row = supTxRows[r]
+                    val txId = row.getOrNull(0)?.trim() ?: ""
+                    val kind = row.getOrNull(1)?.trim() ?: "Chiqim"
+                    val pName = row.getOrNull(2)?.trim() ?: ""
+                    val pPhone = row.getOrNull(3)?.trim() ?: ""
+                    val amt = row.getOrNull(4)?.toDoubleOrNull()?.toLong() ?: 0L
+                    val cur = row.getOrNull(5)?.trim() ?: "UZS"
+                    val date = row.getOrNull(6)?.trim() ?: ""
+                    val desc = row.getOrNull(7)?.trim() ?: ""
+                    val st = row.getOrNull(8)?.trim() ?: "Faol"
+                    if (pName.isNotEmpty() && amt != 0L) {
+                        db.insertTransactionDirect(txId, pName, pPhone, kind, amt, cur, desc, date, "", st, true)
+                    }
+                }
+            }
+
+            // 5. Kassa yozuvlari
+            val kassaRows = sheetMap["Kassa yozuvlari"]
+            if (kassaRows != null && kassaRows.size > 1 && db.getKassaList().isEmpty()) {
+                for (r in (kassaRows.size - 1) downTo 1) {
+                    val row = kassaRows[r]
+                    val kType = row.getOrNull(1)?.trim() ?: "Kirim"
+                    val kCat = row.getOrNull(2)?.trim() ?: ""
+                    val kAmt = row.getOrNull(3)?.toDoubleOrNull()?.toLong() ?: 0L
+                    val kCur = row.getOrNull(4)?.trim() ?: "UZS"
+                    val kPay = row.getOrNull(5)?.trim() ?: "Naqd"
+                    val kDate = row.getOrNull(6)?.trim() ?: ""
+                    val kNote = row.getOrNull(7)?.trim() ?: ""
+                    val kCreator = row.getOrNull(8)?.trim() ?: "Avto"
+                    if (kAmt > 0L) {
+                        db.insertKassaDirect(kType, kCat, kAmt, kCur, kPay, kDate, kNote, kCreator)
+                    }
+                }
+            }
+
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
     private fun generateRealXlsxZipBytes(): ByteArray {
         val clients = db.getPersons(false)
         val suppliers = db.getPersons(true)
@@ -5686,7 +5904,7 @@ $sheetsXml  </sheets>
                 try {
                     val bytes = contentResolver.openInputStream(uri)?.readBytes() ?: return
                     val importedCount = if (bytes.size > 4 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte()) {
-                        parseXlsxZipBytes(bytes, triggerBackup = true)
+                        parseXlsxZipBytes(bytes)
                     } else {
                         parseCsvSmartLines(String(bytes, Charsets.UTF_8).lines())
                     }
@@ -5773,143 +5991,6 @@ $sheetsXml  </sheets>
             event = parser.next()
         }
         return rows
-    }
-
-    private fun parseXlsxZipBytes(bytes: ByteArray): Boolean {
-        return try {
-            val zis = ZipInputStream(ByteArrayInputStream(bytes))
-            var entry = zis.nextEntry
-            val sheetMap = mutableMapOf<String, MutableList<List<String>>>()
-            val sharedStrings = mutableListOf<String>()
-
-            val allEntries = mutableMapOf<String, ByteArray>()
-            while (entry != null) {
-                allEntries[entry.name] = zis.readBytes()
-                entry = zis.nextEntry
-            }
-            zis.close()
-
-            // 1. Shared strings (agar mavjud bo'lsa)
-            val ssBytes = allEntries["xl/sharedStrings.xml"]
-            if (ssBytes != null) {
-                val ssXml = String(ssBytes, Charsets.UTF_8)
-                val matcher = Pattern.compile("<t[^>]*>(.*?)</t>", Pattern.DOTALL).matcher(ssXml)
-                while (matcher.find()) {
-                    sharedStrings.add(xmlUnescape(matcher.group(1) ?: ""))
-                }
-            }
-
-            // 2. Sheet nomlarini xl/workbook.xml dan aniqlaymiz
-            val wbBytes = allEntries["xl/workbook.xml"]
-            val sheetNames = mutableListOf<String>()
-            if (wbBytes != null) {
-                val wbXml = String(wbBytes, Charsets.UTF_8)
-                val mSheet = Pattern.compile("<sheet[^>]*name=\"([^\"]+)\"", Pattern.DOTALL).matcher(wbXml)
-                while (mSheet.find()) {
-                    sheetNames.add(xmlUnescape(mSheet.group(1) ?: ""))
-                }
-            }
-
-            // 3. Har bir varaqni (sheet1.xml ... sheet6.xml) o'qiymiz
-            for (i in 1..6) {
-                val sBytes = allEntries["xl/worksheets/sheet$i.xml"] ?: continue
-                val sName = if (i - 1 < sheetNames.size) sheetNames[i - 1] else "Sheet$i"
-                val sXml = String(sBytes, Charsets.UTF_8)
-                val rows = mutableListOf<List<String>>()
-
-                val rowMatcher = Pattern.compile("<row[^>]*>(.*?)</row>", Pattern.DOTALL).matcher(sXml)
-                while (rowMatcher.find()) {
-                    val rowContent = rowMatcher.group(1) ?: ""
-                    val rowVals = mutableListOf<String>()
-                    val cellMatcher = Pattern.compile("<c[^>]*r=\"([A-Z]+)[0-9]+\"[^>]*>(.*?)</c>", Pattern.DOTALL).matcher(rowContent)
-                    val cellMap = mutableMapOf<String, String>()
-                    while (cellMatcher.find()) {
-                        val col = cellMatcher.group(1) ?: ""
-                        val cBody = cellMatcher.group(2) ?: ""
-                        var cellVal = ""
-                        if (cBody.contains("<is><t>")) {
-                            val tm = Pattern.compile("<t[^>]*>(.*?)</t>", Pattern.DOTALL).matcher(cBody)
-                            if (tm.find()) cellVal = xmlUnescape(tm.group(1) ?: "")
-                        } else if (cBody.contains("<v>")) {
-                            val vm = Pattern.compile("<v>(.*?)</v>").matcher(cBody)
-                            if (vm.find()) {
-                                val rawNum = vm.group(1) ?: ""
-                                cellVal = if (cellMatcher.group(0)?.contains("t=\"s\"") == true) {
-                                    val idx = rawNum.toIntOrNull() ?: 0
-                                    if (idx < sharedStrings.size) sharedStrings[idx] else rawNum
-                                } else {
-                                    rawNum
-                                }
-                            }
-                        }
-                        cellMap[col] = cellVal
-                    }
-                    val colLetters = arrayOf("A", "B", "C", "D", "E", "F", "G", "H", "I")
-                    for (cl in colLetters) {
-                        rowVals.add(cellMap[cl] ?: "")
-                    }
-                    rows.add(rowVals)
-                }
-                sheetMap[sName] = rows
-            }
-
-            // 4. BAZAGA TIKLASH: Mijozlar
-            val clientRows = sheetMap["Mijozlar"] ?: sheetMap.values.firstOrNull()
-            if (clientRows != null && clientRows.size > 1) {
-                for (r in 1 until clientRows.size) {
-                    val row = clientRows[r]
-                    val name = row.getOrNull(1)?.trim() ?: ""
-                    val phone = row.getOrNull(2)?.trim() ?: ""
-                    val balUsd = row.getOrNull(3)?.toDoubleOrNull() ?: 0.0
-                    val balUzs = row.getOrNull(4)?.toLongOrNull() ?: 0L
-                    val dateStr = row.getOrNull(5)?.trim() ?: ""
-                    if (name.isNotEmpty()) {
-                        db.insertOrUpdatePerson(name, phone, balUzs, balUsd, false, dateStr)
-                    }
-                }
-            }
-
-            // 5. BAZAGA TIKLASH: Tranzaksiyalar
-            val txRows = sheetMap["Tranzaksiyalar"]
-            if (txRows != null && txRows.size > 1) {
-                for (r in 1 until txRows.size) {
-                    val row = txRows[r]
-                    val txId = row.getOrNull(0)?.trim() ?: ""
-                    val kind = row.getOrNull(1)?.trim() ?: "Chiqim"
-                    val pName = row.getOrNull(2)?.trim() ?: ""
-                    val pPhone = row.getOrNull(3)?.trim() ?: ""
-                    val amt = row.getOrNull(4)?.toLongOrNull() ?: 0L
-                    val cur = row.getOrNull(5)?.trim() ?: "UZS"
-                    val date = row.getOrNull(6)?.trim() ?: ""
-                    val desc = row.getOrNull(7)?.trim() ?: ""
-                    val st = row.getOrNull(8)?.trim() ?: "Faol"
-                    if (pName.isNotEmpty() && amt != 0L) {
-                        db.insertTransactionDirect(txId, pName, pPhone, kind, amt, cur, desc, date, "", st, false)
-                    }
-                }
-            }
-
-            // 6. BAZAGA TIKLASH: Ta'minotchilar
-            val supRows = sheetMap["Ta'minotchilar"]
-            if (supRows != null && supRows.size > 1) {
-                for (r in 1 until supRows.size) {
-                    val row = supRows[r]
-                    val name = row.getOrNull(1)?.trim() ?: ""
-                    val phone = row.getOrNull(2)?.trim() ?: ""
-                    val balUsd = row.getOrNull(3)?.toDoubleOrNull() ?: 0.0
-                    val balUzs = row.getOrNull(4)?.toLongOrNull() ?: 0L
-                    val dateStr = row.getOrNull(6)?.trim() ?: ""
-                    if (name.isNotEmpty()) {
-                        db.insertOrUpdatePerson(name, phone, balUzs, balUsd, true, dateStr)
-                    }
-                }
-            }
-
-            true
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
-        }
     }
 
     private fun parseCsvSmartLines(lines: List<String>): Int {
