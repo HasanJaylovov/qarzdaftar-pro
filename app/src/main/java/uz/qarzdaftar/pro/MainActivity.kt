@@ -8135,4 +8135,86 @@ $sheetsXml  </sheets>
         Toast.makeText(this, "📩 $sent ta qarzdor/ta'minotchiga SMS va Fonda Qo'ng'iroq yuborildi!", Toast.LENGTH_LONG).show()
     }
 
+
+    private fun buildTopSubscriptionAndAdminBanner(): View {
+        if (storeId.isEmpty()) {
+            storeId = prefs.getString("store_id", "") ?: ""
+            if (storeId.isEmpty()) {
+                storeId = "QF-" + (10000 + Random().nextInt(90000))
+                prefs.edit().putString("store_id", storeId).apply()
+            }
+        }
+        val remMs = getRemainingSubscriptionMillis()
+        val hasRealCode = prefs.getBoolean("activated_by_real_code_v22", false)
+        val remDays = Math.ceil(remMs.toDouble() / (24.0 * 60.0 * 60.0 * 1000.0)).toLong().coerceAtLeast(0L)
+
+        val bannerText = when {
+            isUserBlockedByAdmin() -> "⛔ Admin tomonidan bloklangan!"
+            hasRealCode && isVipLifetime -> "👑 VIP Cheksiz Faol  •  ID: $storeId"
+            hasRealCode && remDays > 0L -> "💎 Obuna faol: $remDays kun  •  ID: $storeId"
+            remDays > 0L -> "⏳ Sinov (5 kun): $remDays kun qoldi"
+            else -> "🔒 Sinov muddati tugadi!"
+        }
+
+        val bar = LinearLayout(this).apply {
+            tag = "GLOBAL_TRIAL_ADMIN_BAR"
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.parseColor("#4F46E5"), Color.parseColor("#7C3AED"))).apply {
+                cornerRadius = 24f
+            }
+            elevation = 16f
+            setPadding(22, 14, 16, 14)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(20, 10, 20, 6)
+            }
+        }
+
+        bar.addView(TextView(this).apply {
+            text = bannerText
+            setTextColor(Color.WHITE)
+            textSize = 12.5f
+            setTypeface(null, Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener { showSubscriptionManageDialog() }
+        })
+
+        bar.addView(TextView(this).apply {
+            text = "💳 Obuna"
+            setTextColor(Color.parseColor("#1E1B4B"))
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyCard("#FFFFFF", "#E0E7FF", 16f)
+            setPadding(16, 8, 16, 8)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { rightMargin = 8 }
+            setOnClickListener { showSubscriptionManageDialog() }
+        })
+
+        bar.addView(TextView(this).apply {
+            text = "⚙️ Admin"
+            setTextColor(Color.WHITE)
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+            background = GradientDrawable().apply {
+                cornerRadius = 16f
+                setColor(Color.parseColor("#33FFFFFF"))
+                setStroke(2, Color.WHITE)
+            }
+            setPadding(16, 8, 16, 8)
+            setOnClickListener {
+                showAdminPaymentSettingsDialog {
+                    renderMainWorkspace()
+                }
+            }
+        })
+
+        return bar
+    }
+
 }
