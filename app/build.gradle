@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 216
-        versionName "21.6-CleanBuildAndExactExcelRestore"
+        versionCode 217
+        versionName "21.7-SeparateLoginAndRegisterPages"
     }
 
     buildTypes {
