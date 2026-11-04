@@ -704,6 +704,9 @@ class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_m
 }
 
 class MainActivity : AppCompatActivity() {
+    private var trialDaysLimit = 15L
+    private var isVipLifetime = false
+    private var subscriptionEndMillis = 0L
     private var storeCountry = "O'zbekiston"
     private var trialStartMillis = 0L
     private fun speakDebtReminderUzbek(clientName: String, amount: Long, dueDate: String) {
@@ -1700,6 +1703,13 @@ class MainActivity : AppCompatActivity() {
 
     // ==================== 2. ASOSIY WORKSPACE VA CHAP/O'NG YARIM KO'RINUVCHI SLIDE TUGMALAR ====================
     private fun renderMainWorkspace() {
+
+        // OBUNA MUDDATI TUGAGAN BO'LSA AVTOMATIK BLOKLASH VA OBUNA SO'RASH:
+        if (isSubscriptionExpiredNow()) {
+            renderSubscriptionBlockScreen()
+            return
+        }
+
         if (!isLoggedIn) {
             renderAuthScreen()
             return
@@ -6597,6 +6607,428 @@ $sheetsXml  </sheets>
         scroll.addView(container)
         rootLayout.addView(scroll)
     }
+
+    // ==================== OBUNA MUDDATINI TEKSHIRISH VA AVTOMATIK BLOKLASH TIZIMI ====================
+    private fun getRemainingSubscriptionMillis(): Long {
+        if (isVipLifetime || prefs.getBoolean("is_vip_lifetime", false)) {
+            return Long.MAX_VALUE
+        }
+        val now = System.currentTimeMillis()
+        val savedSubEnd = prefs.getLong("sub_end_ms", subscriptionEndMillis)
+        val savedTrialStart = prefs.getLong("trial_start_ms", trialStartMillis).let {
+            if (it <= 0L) now else it
+        }
+        // Agar pullik obuna yoqilgan bo'lsa o'shani, aks holda sinov muddatini (masalan 15 kun) hisoblaymiz
+        val effectiveDeadline = if (savedSubEnd > 0L) {
+            savedSubEnd
+        } else {
+            savedTrialStart + (trialDaysLimit * 24L * 60L * 60L * 1000L)
+        }
+        return effectiveDeadline - now
+    }
+
+    private fun isSubscriptionExpiredNow(): Boolean {
+        if (isVipLifetime || prefs.getBoolean("is_vip_lifetime", false)) return false
+        return getRemainingSubscriptionMillis() <= 0L
+    }
+
+    private fun verifyAndActivateSubscriptionKey(rawKey: String): Pair<Boolean, String> {
+        val code = rawKey.trim().uppercase(Locale.getDefault())
+        if (code.isEmpty()) return Pair(false, "Aktivatsiya kodini kiriting!")
+
+        val cleanDigits = storeId.filter { it.isDigit() }.ifEmpty { "12345" }
+        val numId = cleanDigits.toLongOrNull() ?: 12345L
+        val sig1M = ((numId * 31L + 777L) % 9000L + 1000L).toString()
+        val sig6M = ((numId * 47L + 888L) % 9000L + 1000L).toString()
+        val sig1Y = ((numId * 73L + 999L) % 9000L + 1000L).toString()
+        val sigVip = ((numId * 97L + 555L) % 9000L + 1000L).toString()
+
+        val now = System.currentTimeMillis()
+        val oneDayMs = 24L * 60L * 60L * 1000L
+
+        return when {
+            // 1 Oylik (30 kun) kodlar:
+            code == "QF1M-$sig1M" || code == "QARZ-30KUN" || code == "OBUNA-1OY" -> {
+                subscriptionEndMillis = now + (30L * oneDayMs)
+                isVipLifetime = false
+                prefs.edit()
+                    .putLong("sub_end_ms", subscriptionEndMillis)
+                    .putBoolean("is_vip_lifetime", false)
+                    .apply()
+                Pair(true, "✅ 1 oylik (30 kun) obuna muvaffaqiyatli faollashtirildi!")
+            }
+            // 6 Oylik (180 kun) kodlar:
+            code == "QF6M-$sig6M" || code == "QARZ-6OY" || code == "OBUNA-6OY" -> {
+                subscriptionEndMillis = now + (180L * oneDayMs)
+                isVipLifetime = false
+                prefs.edit()
+                    .putLong("sub_end_ms", subscriptionEndMillis)
+                    .putBoolean("is_vip_lifetime", false)
+                    .apply()
+                Pair(true, "✅ 6 oylik (180 kun) obuna muvaffaqiyatli faollashtirildi!")
+            }
+            // 1 Yillik (365 kun) kodlar:
+            code == "QF1Y-$sig1Y" || code == "QARZ-365KUN" || code == "OBUNA-1YIL" -> {
+                subscriptionEndMillis = now + (365L * oneDayMs)
+                isVipLifetime = false
+                prefs.edit()
+                    .putLong("sub_end_ms", subscriptionEndMillis)
+                    .putBoolean("is_vip_lifetime", false)
+                    .apply()
+                Pair(true, "✅ 1 yillik (365 kun) obuna muvaffaqiyatli faollashtirildi!")
+            }
+            // VIP / Cheksiz obuna kodlari:
+            code == "QFVIP-$sigVip" || code == "QARZFY-VIP-2026" || code == "PREMIUM-VIP" -> {
+                isVipLifetime = true
+                subscriptionEndMillis = now + (3650L * oneDayMs)
+                prefs.edit()
+                    .putBoolean("is_vip_lifetime", true)
+                    .putLong("sub_end_ms", subscriptionEndMillis)
+                    .apply()
+                Pair(true, "👑 VIP (Cheksiz) obuna muvaffaqiyatli faollashtirildi!")
+            }
+            else -> Pair(false, "❌ Aktivatsiya kodi noto'g'ri! Admin bilan bog'lanib Do'kon ID ($storeId) uchun kod oling.")
+        }
+    }
+
+    private fun renderSubscriptionBlockScreen() {
+        rootLayout.removeAllViews()
+        rootLayout.setBackgroundColor(Color.parseColor("#0F172A"))
+
+        if (storeId.isEmpty()) {
+            storeId = prefs.getString("store_id", "") ?: ""
+            if (storeId.isEmpty()) {
+                storeId = "QF-" + (10000 + Random().nextInt(90000))
+                prefs.edit().putString("store_id", storeId).apply()
+            }
+        }
+
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(34, 52, 34, 60)
+        }
+
+        // 1. Qizil-binafsha ogohlantirish kartasi
+        val alertHero = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.parseColor("#DC2626"), Color.parseColor("#7C2D12"))
+            ).apply { cornerRadius = 42f }
+            elevation = 14f
+            setPadding(36, 40, 36, 40)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 20 }
+        }
+
+        alertHero.addView(TextView(this).apply {
+            text = "🔒"
+            textSize = 44f
+            gravity = Gravity.CENTER
+        })
+        alertHero.addView(TextView(this).apply {
+            text = "OBUNA MUDDATI TUGADI!"
+            setTextColor(Color.WHITE)
+            textSize = 21f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(0, 8, 0, 6)
+        })
+        alertHero.addView(TextView(this).apply {
+            text = "Dasturdan foydalanish vaqtincha bloklandi.\nIshni davom ettirish uchun obunani yangilang.\n\nBarcha mijozlar va qarzlar bazada 100% xavfsiz saqlangan!"
+            setTextColor(Color.parseColor("#FEE2E2"))
+            textSize = 13f
+            gravity = Gravity.CENTER
+        })
+        container.addView(alertHero)
+
+        // 2. Asosiy oq karta: Do'kon ID + Tariflar + Aktivatsiya kodi kiritish
+        val mainCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = glossyCard("#FFFFFF", "#E2E8F8", 38f)
+            elevation = 10f
+            setPadding(28, 28, 28, 32)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        // Do'kon va ID qutisi (Nusxalash bilan)
+        val idBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                cornerRadius = 24f
+                setColor(Color.parseColor("#EEF2FF"))
+                setStroke(3, Color.parseColor("#6366F1"))
+            }
+            setPadding(22, 18, 22, 18)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 18 }
+            setOnClickListener {
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("StoreID", storeId))
+                Toast.makeText(this@MainActivity, "📋 Do'kon ID nusxalandi: $storeId", Toast.LENGTH_SHORT).show()
+            }
+        }
+        idBox.addView(TextView(this).apply {
+            text = "🏪 Muassasa: ${storeName.ifEmpty { "QarzDaftar" }} (${detectEffectiveStoreCategory()})"
+            setTextColor(Color.parseColor("#1E1B4B"))
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+        })
+        idBox.addView(TextView(this).apply {
+            text = "🆔 Sizning ID raqamingiz: $storeId  (Nusxalash 📋)"
+            setTextColor(Color.parseColor("#4338CA"))
+            textSize = 15f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 6, 0, 0)
+        })
+        idBox.addView(TextView(this).apply {
+            text = "Ushbu ID raqamni adminga yuborib, obuna faollashtirish kodini oling."
+            setTextColor(Color.parseColor("#64748B"))
+            textSize = 11.5f
+            setPadding(0, 4, 0, 0)
+        })
+        mainCard.addView(idBox)
+
+        // Obuna tariflari haqida ma'lumot
+        mainCard.addView(TextView(this).apply {
+            text = "💎 Mavjud obuna tariflari:"
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(4, 0, 4, 10)
+        })
+
+        val plans = listOf(
+            Triple("📅  1 Oylik (30 kun)", "39 000 so'm", "Barcha funksiyalar + Avto-SMS + Excel zahira"),
+            Triple("📆  6 Oylik (180 kun)", "199 000 so'm", "2 oy tejamkorlik + VIP qo'llab-quvvatlash"),
+            Triple("👑  1 Yillik / VIP", "349 000 so'm", "To'liq cheklovsiz + Bulutli zahira")
+        )
+        plans.forEach { (pTitle, pPrice, pDesc) ->
+            val pRow = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = glossyCard("#F8FAFC", "#CBD5E1", 22f)
+                setPadding(18, 14, 18, 14)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = 8 }
+            }
+            val topR = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            topR.addView(TextView(this).apply {
+                text = pTitle
+                setTextColor(Color.parseColor("#0F172A"))
+                textSize = 13.5f
+                setTypeface(null, Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            topR.addView(TextView(this).apply {
+                text = pPrice
+                setTextColor(Color.parseColor("#4F46E5"))
+                textSize = 14f
+                setTypeface(null, Typeface.BOLD)
+            })
+            pRow.addView(topR)
+            pRow.addView(TextView(this).apply {
+                text = pDesc
+                setTextColor(Color.parseColor("#64748B"))
+                textSize = 11.5f
+                setPadding(0, 3, 0, 0)
+            })
+            mainCard.addView(pRow)
+        }
+
+        // Aktivatsiya kodi kiritish maydoni
+        mainCard.addView(TextView(this).apply {
+            text = "🔑 Obuna aktivatsiya kodini kiriting:"
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 13.5f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(4, 10, 4, 6)
+        })
+
+        val etKey = makeGlassInput("Masalan: QF1M-XXXX yoki OBUNA-1OY", "")
+        mainCard.addView(etKey)
+
+        // [ 🚀 Obunani faollashtirish ] tugmasi
+        mainCard.addView(TextView(this).apply {
+            text = "🚀  Obunani faollashtirish va Dasturni ochish"
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyPurpleGrad(28f)
+            setPadding(24, 24, 24, 24)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = 8; bottomMargin = 14 }
+            setOnClickListener {
+                val (ok, msg) = verifyAndActivateSubscriptionKey(etKey.text.toString())
+                Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+                if (ok) {
+                    renderMainWorkspace()
+                }
+            }
+        })
+
+        // Admin bilan bog'lanish (Telegram)
+        mainCard.addView(TextView(this).apply {
+            text = "💬  Telegram orqali obuna kodi olish (@QarzFy_Admin)"
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            textSize = 13.5f
+            setTypeface(null, Typeface.BOLD)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.parseColor("#0284C7"), Color.parseColor("#2563EB"))
+            ).apply { cornerRadius = 26f }
+            setPadding(20, 20, 20, 20)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 10 }
+            setOnClickListener {
+                try {
+                    val tgUrl = "https://t.me/share/url?url=Assalomu%20alaykum!%20QarzFy%20obunasini%20faollashtirmoqchiman.%20Dokon:%20${Uri.encode(storeName)}%20|%20ID:%20$storeId"
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(tgUrl)))
+                } catch (e: Exception) {
+                    Toast.makeText(this@MainActivity, "Do'kon ID: $storeId", Toast.LENGTH_LONG).show()
+                }
+            }
+        })
+
+        // Ma'lumotlarni yo'qotmaslik uchun Excel ko'rinishida saqlab olish tugmasi
+        mainCard.addView(TextView(this).apply {
+            text = "📥  Mavjud bazani Excel (.xlsx) fayl qilib saqlab olish"
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyCard("#F1F5F9", "#CBD5E1", 24f)
+            setPadding(18, 18, 18, 18)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setOnClickListener {
+                exportRealExcelToDownloads(showToast = true)
+            }
+        })
+
+        container.addView(mainCard)
+        scroll.addView(container)
+        rootLayout.addView(scroll)
+    }
+
+    // Profil va Obuna bo'limidan obuna holatini ko'rish, kod kiritish va TEST uchun blokni tekshirish oynasi
+    private fun showSubscriptionManageDialog() {
+        val sheet = BottomSheetDialog(this)
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = glossyCard("#FFFFFF", "#E2E8F8", 42f)
+            setPadding(32, 28, 32, 44)
+        }
+
+        val remMs = getRemainingSubscriptionMillis()
+        val remDays = (remMs / (24L * 60L * 60L * 1000L)).coerceAtLeast(0L)
+        val statusTxt = when {
+            isVipLifetime -> "👑 VIP Cheksiz obuna faol"
+            remMs <= 0L -> "🔒 Obuna muddati tugagan (Bloklangan)"
+            else -> "⏳ Faol obuna: $remDays kun qoldi"
+        }
+
+        wrap.addView(TextView(this).apply {
+            text = "💎 Obuna va Litsenziya holati"
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 18.5f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 0, 0, 6)
+        })
+        wrap.addView(TextView(this).apply {
+            text = "$statusTxt  |  🆔 ID: $storeId"
+            setTextColor(Color.parseColor("#4338CA"))
+            textSize = 13.5f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 0, 0, 16)
+        })
+
+        val etCode = makeGlassInput("🔑 Aktivatsiya kodi (masalan: OBUNA-1OY)", "")
+        wrap.addView(etCode)
+
+        wrap.addView(TextView(this).apply {
+            text = "✅  Kodni faollashtirish"
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            textSize = 14.5f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyPurpleGrad(26f)
+            setPadding(22, 22, 22, 22)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 12 }
+            setOnClickListener {
+                val (ok, msg) = verifyAndActivateSubscriptionKey(etCode.text.toString())
+                Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+                if (ok) {
+                    sheet.dismiss()
+                    renderMainWorkspace()
+                }
+            }
+        })
+
+        // O'zingiz telefonda obuna tugaganda bloklanishini 1 bosishda sinab ko'rishingiz uchun tugma:
+        wrap.addView(TextView(this).apply {
+            text = "⚠️  Obuna tugashini hozir sinab ko'rish (Bloklash testi)"
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#DC2626"))
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyCard("#FEF2F2", "#FECACA", 24f)
+            setPadding(18, 18, 18, 18)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setOnClickListener {
+                sheet.dismiss()
+                isVipLifetime = false
+                subscriptionEndMillis = System.currentTimeMillis() - 60_000L
+                trialStartMillis = System.currentTimeMillis() - (30L * 24L * 60L * 60L * 1000L)
+                prefs.edit()
+                    .putBoolean("is_vip_lifetime", false)
+                    .putLong("sub_end_ms", subscriptionEndMillis)
+                    .putLong("trial_start_ms", trialStartMillis)
+                    .apply()
+                Toast.makeText(this@MainActivity, "🔒 Obuna muddati tugatildi — dastur bloklandi!", Toast.LENGTH_SHORT).show()
+                renderMainWorkspace()
+            }
+        })
+
+        sheet.setContentView(wrap)
+        sheet.show()
+    }
+
 
     private fun renderPinLockScreen(mode: String = "UNLOCK") {
         rootLayout.removeAllViews()

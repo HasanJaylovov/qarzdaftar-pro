@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 217
-        versionName "21.7-SeparateLoginAndRegisterPages"
+        versionCode 218
+        versionName "21.8-AutoSubscriptionLockPaywall"
     }
 
     buildTypes {
