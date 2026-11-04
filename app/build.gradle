@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 219
-        versionName "21.9-AdminCardSyncAnd5DayStrictTrial"
+        versionCode 220
+        versionName "22.0-TopSubBannerAdminSyncAnd5DayBlock"
     }
 
     buildTypes {
