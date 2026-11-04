@@ -7880,4 +7880,30 @@ $sheetsXml  </sheets>
         }
         Toast.makeText(this, "📩 $sent ta qarzdor/ta'minotchiga SMS va Fonda Qo'ng'iroq yuborildi!", Toast.LENGTH_LONG).show()
     }
+
+    private fun exportRealExcelToDownloads(showToast: Boolean = true) {
+        try {
+            val bytes = generateRealXlsxZipBytes()
+            val fileName = "QarzFy_Hisobot_" + SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.getDefault()).format(Date()) + ".xlsx"
+            val resolver = contentResolver
+            val contentValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            }
+            val uri = resolver.insert(MediaStore.Files.getContentUri("external"), contentValues)
+            if (uri != null) {
+                resolver.openOutputStream(uri)?.use { it.write(bytes) }
+                if (showToast) {
+                    Toast.makeText(this, "✅ Excel fayl Downloads papkasiga saqlandi!", Toast.LENGTH_LONG).show()
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            if (showToast) {
+                Toast.makeText(this, "Xatolik: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
 }
