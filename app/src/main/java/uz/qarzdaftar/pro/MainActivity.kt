@@ -620,6 +620,7 @@ class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_m
 }
 
 class MainActivity : AppCompatActivity() {
+    private var storeCountry = "O'zbekiston"
     private var trialStartMillis = 0L
     private fun speakDebtReminderUzbek(clientName: String, amount: Long, dueDate: String) {
         // Ovozli eslatma sintezi
@@ -1049,9 +1050,82 @@ class MainActivity : AppCompatActivity() {
         val savedCat = (prefs.getString("store_category", storeCategory) ?: storeCategory).trim()
         val lowerName = storeName.lowercase(Locale.getDefault())
         return when {
-            savedCat.contains("Dorixona", ignoreCase = true) || lowerName.contains("dorixona") || lowerName.contains("apteka") || lowerName.contains("farm") || lowerName.contains("dori") -> "Dorixona"
-            savedCat.contains("Qurilish", ignoreCase = true) || lowerName.contains("qurilish") || lowerName.contains("stroy") || lowerName.contains("xo'jalik") || lowerName.contains("sement") -> "Qurilish mollari do'koni"
+            savedCat.contains("Dorixona", ignoreCase = true) || lowerName.contains("dorixona") || lowerName.contains("apteka") || lowerName.contains("farm") -> "Dorixona"
+            savedCat.contains("Qurilish", ignoreCase = true) || lowerName.contains("qurilish") || lowerName.contains("stroy") || lowerName.contains("sement") -> "Qurilish mollari do'koni"
+            savedCat.contains("Oshxona", ignoreCase = true) || lowerName.contains("oshxona") || lowerName.contains("kafe") || lowerName.contains("choyxona") || lowerName.contains("restoran") -> "Oshxona"
             else -> "Do'kon"
+        }
+    }
+
+    private fun storeTitleWithLocativeSuffix(): String {
+        val cat = detectEffectiveStoreCategory()
+        val rawName = storeName.trim().ifEmpty { cat }
+        val low = rawName.lowercase(Locale.getDefault())
+        return when (cat) {
+            "Dorixona" -> {
+                when {
+                    low.endsWith("dorixona") -> "$rawName" + "sida"
+                    low.endsWith("dorixonasi") -> "$rawName" + "da"
+                    else -> "$rawName dorixonasida"
+                }
+            }
+            "Qurilish mollari do'koni" -> {
+                when {
+                    low.contains("qurilish") && low.endsWith("do'koni") -> "$rawName" + "da"
+                    low.contains("qurilish") -> "$rawName do'konida"
+                    else -> "$rawName qurilish mollari do'konida"
+                }
+            }
+            "Oshxona" -> {
+                when {
+                    low.endsWith("oshxona") -> "$rawName" + "sida"
+                    low.endsWith("oshxonasi") -> "$rawName" + "da"
+                    low.endsWith("kafe") || low.endsWith("restoran") -> "$rawName" + "da"
+                    else -> "$rawName oshxonasida"
+                }
+            }
+            else -> {
+                when {
+                    low.endsWith("do'kon") || low.endsWith("dokon") -> "$rawName" + "ida"
+                    low.endsWith("do'koni") || low.endsWith("dokoni") -> "$rawName" + "da"
+                    else -> "$rawName do'konida"
+                }
+            }
+        }
+    }
+
+    private fun storeTitleWithAblativeSuffix(): String {
+        val cat = detectEffectiveStoreCategory()
+        val rawName = storeName.trim().ifEmpty { cat }
+        val low = rawName.lowercase(Locale.getDefault())
+        return when (cat) {
+            "Dorixona" -> {
+                when {
+                    low.endsWith("dorixona") -> "$rawName" + "sidagi"
+                    low.endsWith("dorixonasi") -> "$rawName" + "dagi"
+                    else -> "$rawName dorixonasidagi"
+                }
+            }
+            "Qurilish mollari do'koni" -> {
+                when {
+                    low.contains("qurilish") -> "$rawName do'konidagi"
+                    else -> "$rawName qurilish mollari do'konidagi"
+                }
+            }
+            "Oshxona" -> {
+                when {
+                    low.endsWith("oshxona") -> "$rawName" + "sidagi"
+                    low.endsWith("oshxonasi") -> "$rawName" + "dagi"
+                    else -> "$rawName oshxonasidagi"
+                }
+            }
+            else -> {
+                when {
+                    low.endsWith("do'kon") || low.endsWith("dokon") -> "$rawName" + "idagi"
+                    low.endsWith("do'koni") || low.endsWith("dokoni") -> "$rawName" + "dagi"
+                    else -> "$rawName do'konidagi"
+                }
+            }
         }
     }
 
@@ -6109,23 +6183,23 @@ $sheetsXml  </sheets>
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(32, 44, 32, 56)
+            setPadding(32, 40, 32, 48)
         }
 
         val heroCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            background = glossyPurpleGrad(42f)
+            background = glossyPurpleGrad(40f)
             elevation = 12f
-            setPadding(34, 38, 34, 38)
+            setPadding(32, 34, 32, 34)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 20 }
+            ).apply { bottomMargin = 18 }
         }
         heroCard.addView(ImageView(this).apply {
             setImageResource(R.drawable.ic_qarzdaftar_logo)
-            layoutParams = LinearLayout.LayoutParams(120, 120).apply { bottomMargin = 10 }
+            layoutParams = LinearLayout.LayoutParams(110, 110).apply { bottomMargin = 8 }
         })
         heroCard.addView(TextView(this).apply {
             text = "QarzDaftar Pro"
@@ -6135,26 +6209,26 @@ $sheetsXml  </sheets>
             gravity = Gravity.CENTER
         })
         heroCard.addView(TextView(this).apply {
-            text = "Do'kon, Dorixona va Qurilish mollari do'koni uchun\nrasmiy qarz va kassa boshqaruv tizimi"
+            text = "Qarz, kassa va mijozlar hisobini yuritish tizimi"
             setTextColor(Color.parseColor("#E0E7FF"))
             textSize = 12.5f
             gravity = Gravity.CENTER
-            setPadding(0, 6, 0, 0)
+            setPadding(0, 4, 0, 0)
         })
         container.addView(heroCard)
 
         val formCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = glossyCard("#FFFFFF", "#E2E8F8", 38f)
+            background = glossyCard("#FFFFFF", "#E2E8F8", 36f)
             elevation = 8f
-            setPadding(28, 26, 28, 34)
+            setPadding(26, 24, 26, 30)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
         }
 
-        // [ 🔑 Kirish (Login) ]  |  [ 📝 Ro'yxatdan o'tish ]
+        // Tab: [ 🔑 Kirish (Login) ] | [ 📝 Ro'yxatdan o'tish ]
         val tabSwitch = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             background = glossyCard("#F1F5F9", "#E2E8F8", 30f)
@@ -6162,7 +6236,7 @@ $sheetsXml  </sheets>
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 18 }
+            ).apply { bottomMargin = 16 }
         }
         listOf(false to "🔑 Kirish (Login)", true to "📝 Ro'yxatdan o'tish").forEach { (regFlag, tabTitle) ->
             val active = (isRegisterMode == regFlag)
@@ -6172,8 +6246,8 @@ $sheetsXml  </sheets>
                 textSize = 13f
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(if (active) Color.WHITE else Color.parseColor("#475569"))
-                background = if (active) glossyPurpleGrad(26f) else null
-                setPadding(14, 18, 14, 18)
+                background = if (active) glossyPurpleGrad(24f) else null
+                setPadding(12, 16, 12, 16)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 setOnClickListener {
                     isRegisterMode = regFlag
@@ -6183,132 +6257,206 @@ $sheetsXml  </sheets>
         }
         formCard.addView(tabSwitch)
 
-        // FAOLIYAT TURINI TANLASH: Dorixona | Do'kon | Qurilish mollari do'koni
-        formCard.addView(TextView(this).apply {
-            text = "🏢 Faoliyat turini tanlang (SMS shunga qarab yuboriladi):"
-            setTextColor(Color.parseColor("#0F172A"))
-            textSize = 13f
-            setTypeface(null, Typeface.BOLD)
-            setPadding(4, 0, 4, 10)
-        })
-
-        var selectedCat = detectEffectiveStoreCategory()
-        val catBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 14 }
-        }
-
-        val catOptions = listOf(
-            Triple("Do'kon", "🏪  Do'kon (Market / Oziq-ovqat)", "SMSda: «... do'konida sizga qarz yozildi»"),
-            Triple("Dorixona", "💊  Dorixona (Apteka)", "SMSda: «... dorixonasida sizga qarz yozildi»"),
-            Triple("Qurilish mollari do'koni", "🧱  Qurilish mollari do'koni", "SMSda: «... qurilish mollari do'konida qarz yozildi»")
-        )
-
+        var selectedCat = storeCategory.ifEmpty { "Do'kon" }
+        var selectedCountry = prefs.getString("store_country", storeCountry) ?: "O'zbekiston"
         var etStoreInput: EditText? = null
+        var etOwnerInput: EditText? = null
 
-        fun refreshCategorySelection() {
-            catBox.removeAllViews()
-            catOptions.forEach { (catKey, title, subtitle) ->
-                val isSel = (selectedCat == catKey)
-                val rowCard = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
-                    background = GradientDrawable().apply {
-                        cornerRadius = 24f
-                        setColor(Color.parseColor(if (isSel) "#EDE9FE" else "#F8FAFC"))
-                        setStroke(if (isSel) 4 else 2, Color.parseColor(if (isSel) "#5946E8" else "#CBD5E1"))
+        if (isRegisterMode) {
+            // RO'YXATDAN O'TISH REJIMIDA: Faoliyat sohasi, Davlat, Do'kon nomi va Egasi so'raladi
+            formCard.addView(TextView(this).apply {
+                text = "🏢 Faoliyat sohangizni tanlang:"
+                setTextColor(Color.parseColor("#0F172A"))
+                textSize = 13f
+                setTypeface(null, Typeface.BOLD)
+                setPadding(4, 0, 4, 8)
+            })
+
+            val catBox = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = 12 }
+            }
+
+            val catOptions = listOf(
+                Triple("Do'kon", "🏪  Do'kon (Savdo / Market)", "SMSda: «... do'konida qarz yozildi»"),
+                Triple("Dorixona", "💊  Dorixona (Farmatsevtika)", "SMSda: «... dorixonasida qarz yozildi»"),
+                Triple("Qurilish mollari do'koni", "🧱  Qurilish mollari do'koni", "SMSda: «... qurilish do'konida qarz yozildi»"),
+                Triple("Oshxona", "🍽  Oshxona (Kafe / Restoran)", "SMSda: «... oshxonasida qarz yozildi»")
+            )
+
+            fun refreshCategorySelection() {
+                catBox.removeAllViews()
+                catOptions.forEach { (catKey, title, subtitle) ->
+                    val isSel = (selectedCat == catKey)
+                    val rowCard = LinearLayout(this).apply {
+                        orientation = LinearLayout.VERTICAL
+                        background = GradientDrawable().apply {
+                            cornerRadius = 20f
+                            setColor(Color.parseColor(if (isSel) "#EDE9FE" else "#F8FAFC"))
+                            setStroke(if (isSel) 4 else 2, Color.parseColor(if (isSel) "#5946E8" else "#CBD5E1"))
+                        }
+                        setPadding(18, 12, 18, 12)
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                        ).apply { bottomMargin = 8 }
+                        setOnClickListener {
+                            selectedCat = catKey
+                            storeCategory = catKey
+                            refreshCategorySelection()
+                            etStoreInput?.hint = when (catKey) {
+                                "Dorixona" -> "💊 Dorixona nomi (masalan: Shifo Farm)"
+                                "Qurilish mollari do'koni" -> "🧱 Qurilish do'koni nomi (masalan: Stroy Market)"
+                                "Oshxona" -> "🍽 Oshxona / Kafe nomi (masalan: Milliy Taomlar)"
+                                else -> "🏪 Do'kon nomi (masalan: Baraka Market)"
+                            }
+                        }
                     }
-                    setPadding(20, 14, 20, 14)
+                    rowCard.addView(TextView(this).apply {
+                        text = if (isSel) "✅  $title" else "⚪  $title"
+                        setTextColor(Color.parseColor(if (isSel) "#4338CA" else "#0F172A"))
+                        textSize = 13.5f
+                        setTypeface(null, Typeface.BOLD)
+                    })
+                    rowCard.addView(TextView(this).apply {
+                        text = subtitle
+                        setTextColor(Color.parseColor("#64748B"))
+                        textSize = 11.5f
+                        setPadding(0, 3, 0, 0)
+                    })
+                    catBox.addView(rowCard)
+                }
+            }
+            refreshCategorySelection()
+            formCard.addView(catBox)
+
+            // Davlat tanlovi
+            formCard.addView(TextView(this).apply {
+                text = "🌍 Davlatingizni tanlang:"
+                setTextColor(Color.parseColor("#0F172A"))
+                textSize = 13f
+                setTypeface(null, Typeface.BOLD)
+                setPadding(4, 4, 4, 6)
+            })
+
+            val countrySpinner = Spinner(this).apply {
+                val countries = listOf("🇺🇿 O'zbekiston", "🇰🇿 Qozog'iston", "🇰🇬 Qirg'iziston", "🇹🇯 Tojikiston", "🇷🇺 Rossiya", "🌐 Boshqa")
+                adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, countries)
+                val defIdx = when {
+                    selectedCountry.contains("Qozog") -> 1
+                    selectedCountry.contains("Qirg") -> 2
+                    selectedCountry.contains("Tojik") -> 3
+                    selectedCountry.contains("Ross") -> 4
+                    else -> 0
+                }
+                setSelection(defIdx)
+                background = glossyCard("#F8FAFC", "#CBD5E1", 20f)
+                setPadding(16, 16, 16, 16)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = 12 }
+                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                    override fun onItemSelected(p0: AdapterView<*>?, p1: View?, pos: Int, id: Long) {
+                        selectedCountry = countries[pos].substring(3).trim()
+                    }
+                    override fun onNothingSelected(p0: AdapterView<*>?) {}
+                }
+            }
+            formCard.addView(countrySpinner)
+
+            val storeHintTxt = when (selectedCat) {
+                "Dorixona" -> "💊 Dorixona nomi (masalan: Shifo Farm)"
+                "Qurilish mollari do'koni" -> "🧱 Qurilish do'koni nomi (masalan: Stroy Market)"
+                "Oshxona" -> "🍽 Oshxona / Kafe nomi (masalan: Milliy Taomlar)"
+                else -> "🏪 Do'kon nomi (masalan: Baraka Market)"
+            }
+            etStoreInput = makeGlassInput(storeHintTxt, storeName)
+            etOwnerInput = makeGlassInput("👤 Do'konchi ism-familiyasi", ownerName)
+            formCard.addView(etStoreInput!!)
+            formCard.addView(etOwnerInput!!)
+        } else {
+            // LOGIN REJIMIDA: Faqat axborot ko'rsatiladi (agar ro'yxatdan o'tgan bo'lsa)
+            val savedStoreName = prefs.getString("store_name", storeName) ?: ""
+            val savedCat = prefs.getString("store_category", storeCategory) ?: "Do'kon"
+            val savedCountry = prefs.getString("store_country", "O'zbekiston") ?: "O'zbekiston"
+            if (savedStoreName.isNotEmpty()) {
+                val infoBox = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    background = glossyCard("#EFF6FF", "#BFDBFE", 24f)
+                    setPadding(18, 14, 18, 14)
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { bottomMargin = 8 }
-                    setOnClickListener {
-                        selectedCat = catKey
-                        storeCategory = catKey
-                        refreshCategorySelection()
-                        etStoreInput?.hint = when (catKey) {
-                                "Dorixona" -> "💊 Dorixona nomi (masalan: Shifo Farm)"
-                                "Qurilish mollari do'koni" -> "🧱 Qurilish mollari do'koni nomi (masalan: Stroy Market)"
-                                else -> "🏪 Do'kon nomi (masalan: Baraka Market)"
-                        }
-                    }
+                    ).apply { bottomMargin = 14 }
                 }
-                rowCard.addView(TextView(this).apply {
-                    text = if (isSel) "✅  $title" else "⚪  $title"
-                    setTextColor(Color.parseColor(if (isSel) "#4338CA" else "#0F172A"))
+                infoBox.addView(TextView(this).apply {
+                    text = "🏪 Muassasa: $savedStoreName"
+                    setTextColor(Color.parseColor("#1E3A8A"))
                     textSize = 13.5f
                     setTypeface(null, Typeface.BOLD)
                 })
-                rowCard.addView(TextView(this).apply {
-                    text = subtitle
-                    setTextColor(Color.parseColor("#64748B"))
-                    textSize = 11.5f
+                infoBox.addView(TextView(this).apply {
+                    text = "📌 Sohasi: $savedCat  |  🌍 Davlat: $savedCountry"
+                    setTextColor(Color.parseColor("#3B82F6"))
+                    textSize = 12f
                     setPadding(0, 3, 0, 0)
                 })
-                catBox.addView(rowCard)
+                formCard.addView(infoBox)
             }
         }
-        refreshCategorySelection()
-        formCard.addView(catBox)
 
-        val storeHintTxt = when (selectedCat) {
-            "Dorixona" -> "💊 Dorixona nomi (masalan: Shifo Farm)"
-            "Qurilish mollari do'koni" -> "🧱 Qurilish mollari do'koni nomi (masalan: Stroy Market)"
-            else -> "🏪 Do'kon nomi (masalan: Baraka Market)"
-        }
-
-        etStoreInput = makeGlassInput(storeHintTxt, storeName)
-        val etOwnerInput = makeGlassInput("👤 Do'konchi ism-familiyasi", ownerName)
         val etPhone = makeGlassInput("📞 Telefon raqamingiz (+998...)", userPhone.ifEmpty { "+998" })
         etPhone.inputType = InputType.TYPE_CLASS_PHONE
         val etPass = makeGlassInput("🔒 Parol", "")
         etPass.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        val etAddr = makeGlassInput("📍 Manzil (ixtiyoriy)", storeAddress)
-
-        formCard.addView(etStoreInput!!)
-        formCard.addView(etOwnerInput)
         formCard.addView(etPhone)
         formCard.addView(etPass)
-        if (isRegisterMode) {
-            formCard.addView(etAddr)
-        }
 
         formCard.addView(TextView(this).apply {
-            text = if (isRegisterMode) "🚀  Ro'yxatdan o'tish va Boshlash" else "🔓  Tizimga kirish"
+            text = if (isRegisterMode) "🚀  Ro'yxatdan o'tish va Saqlash" else "🔓  Tizimga kirish"
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
-            background = glossyPurpleGrad(30f)
-            setPadding(24, 24, 24, 24)
+            background = glossyPurpleGrad(28f)
+            setPadding(22, 22, 22, 22)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = 10 }
             setOnClickListener {
-                val stName = etStoreInput?.text?.toString()?.trim() ?: ""
-                val owName = etOwnerInput.text.toString().trim()
                 val ph = etPhone.text.toString().trim()
                 val pw = etPass.text.toString().trim()
-                val ad = etAddr.text.toString().trim()
 
-                if (stName.isEmpty()) {
-                    Toast.makeText(this@MainActivity, "Iltimos, $selectedCat nomini kiriting!", Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
                 if (ph.length < 7 || pw.isEmpty()) {
                     Toast.makeText(this@MainActivity, "Telefon raqam va parolni kiriting!", Toast.LENGTH_SHORT).show()
                     return@setOnClickListener
                 }
 
-                storeCategory = selectedCat
-                storeName = stName
-                ownerName = owName.ifEmpty { stName }
+                if (isRegisterMode) {
+                    val stName = etStoreInput?.text?.toString()?.trim() ?: ""
+                    val owName = etOwnerInput?.text?.toString()?.trim() ?: ""
+                    if (stName.isEmpty()) {
+                        Toast.makeText(this@MainActivity, "Iltimos, nomini kiriting!", Toast.LENGTH_SHORT).show()
+                        return@setOnClickListener
+                    }
+                    storeCategory = selectedCat
+                    storeName = stName
+                    ownerName = owName.ifEmpty { stName }
+                    storeCountry = selectedCountry
+                } else {
+                    // Login qilganda oldin saqlangan soha, nom va davlatni xotiradan avtomatik olamiz
+                    storeName = prefs.getString("store_name", storeName) ?: storeName
+                    ownerName = prefs.getString("owner_name", ownerName) ?: ownerName
+                    storeCategory = prefs.getString("store_category", storeCategory) ?: "Do'kon"
+                    storeCountry = prefs.getString("store_country", "O'zbekiston") ?: "O'zbekiston"
+                }
+
                 userPhone = ph
-                if (ad.isNotEmpty()) storeAddress = ad
                 if (storeId.isEmpty()) storeId = "QF-" + (10000 + Random().nextInt(90000))
                 if (trialStartMillis == 0L) trialStartMillis = System.currentTimeMillis()
                 isLoggedIn = true
@@ -6319,13 +6467,13 @@ $sheetsXml  </sheets>
                     .putString("store_category", storeCategory)
                     .putString("store_name", storeName)
                     .putString("owner_name", ownerName)
+                    .putString("store_country", storeCountry)
                     .putString("user_phone", userPhone)
-                    .putString("store_address", storeAddress)
                     .putString("store_id", storeId)
                     .putLong("trial_start_ms", trialStartMillis)
                     .apply()
 
-                Toast.makeText(this@MainActivity, "✅ Xush kelibsiz, $ownerName ($storeName — $storeCategory)!", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@MainActivity, "✅ Xush kelibsiz: $storeName ($storeCategory, $storeCountry)!", Toast.LENGTH_LONG).show()
                 renderMainWorkspace()
             }
         })
@@ -6360,54 +6508,7 @@ $sheetsXml  </sheets>
             )
         }
 
-        // Yuqori qator: Faoliyat turi (Do'kon / Dorixona / Qurilish) va Profilga / Ro'yxatdan o'tishga o'tish
-        val topActionRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 8 }
-        }
 
-        val currentCatIcon = when (detectEffectiveStoreCategory()) {
-            "Dorixona" -> "💊 Dorixona"
-            "Qurilish mollari do'koni" -> "🧱 Qurilish do'koni"
-            else -> "🏪 Do'kon"
-        }
-
-        topActionRow.addView(TextView(this).apply {
-            text = "$currentCatIcon: ${storeName.ifEmpty { "Tanlash" }} ▾"
-            textSize = 12f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#4338CA"))
-            background = glossyCard("#EDE9FE", "#C4B5FD", 22f)
-            setPadding(20, 12, 20, 12)
-            setOnClickListener {
-                showStoreCategoryQuickSelectorDialog {
-                    renderPinLockScreen(mode)
-                }
-            }
-        })
-
-        topActionRow.addView(View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
-        })
-
-        topActionRow.addView(TextView(this).apply {
-            text = "📝 Ro'yxatdan o'tish / Kirish"
-            textSize = 11.5f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#0F172A"))
-            background = glossyCard("#FFFFFF", "#CBD5E1", 22f)
-            setPadding(18, 12, 18, 12)
-            setOnClickListener {
-                isLoggedIn = false
-                isRegisterMode = true
-                renderAuthScreen()
-            }
-        })
-        fullScreenPage.addView(topActionRow)
 
         val logoSz = (screenW * 0.15f).toInt().coerceIn(90, 145)
         fullScreenPage.addView(ImageView(this).apply {
