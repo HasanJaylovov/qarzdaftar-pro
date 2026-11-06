@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 230
-        versionName "23.0-MasterCleanStableRelease"
+        versionCode 231
+        versionName "23.1-ZeroSyntaxErrorsMaster"
     }
 
     buildTypes {
