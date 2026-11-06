@@ -7544,184 +7544,7 @@ $sheetsXml  </sheets>
 
 
     // ==================== TIKLANGAN 6 TA YORDAMCHI VA QULF FUNKSIYALARI ====================
-    inner class FullPatternLockView(
-        context: Context,
-        private val onPatternCompleted: (String) -> Unit
-    ) : View(context) {
-
-        private val selectedNodes = mutableListOf<Int>()
-        private var currentX = 0f
-        private var currentY = 0f
-        private var isDrawing = false
-        private var isErrorState = false
-        private var isProcessingResult = false
-
-        private val linePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#5946E8")
-            strokeWidth = 16f
-            style = android.graphics.Paint.Style.STROKE
-            strokeCap = android.graphics.Paint.Cap.ROUND
-            strokeJoin = android.graphics.Paint.Join.ROUND
-        }
-
-        private val nodeOuterPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            style = android.graphics.Paint.Style.FILL
-        }
-
-        private val nodeRingPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            style = android.graphics.Paint.Style.STROKE
-            strokeWidth = 6f
-        }
-
-        private val nodeInnerPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            style = android.graphics.Paint.Style.FILL
-        }
-
-        private fun getNodeCenter(index: Int): Pair<Float, Float> {
-            val w = width.coerceAtLeast(300)
-            val h = height.coerceAtLeast(300)
-            val row = index / 3
-            val col = index % 3
-            val side = minOf(w, h).toFloat()
-            val offsetX = (w - side) / 2f
-            val offsetY = (h - side) / 2f
-            val pad = side * 0.18f
-            val step = ((side - 2f * pad) / 2f).coerceAtLeast(60f)
-            return Pair(offsetX + pad + col * step, offsetY + pad + row * step)
-        }
-
-        fun showErrorAndReset() {
-            isErrorState = true
-            isProcessingResult = false
-            invalidate()
-            postDelayed({
-                selectedNodes.clear()
-                isErrorState = false
-                invalidate()
-            }, 400)
-        }
-
-        override fun onDraw(canvas: android.graphics.Canvas) {
-            super.onDraw(canvas)
-            if (width <= 0 || height <= 0) return
-
-            val activeColor = if (isErrorState) Color.parseColor("#EF4444") else Color.parseColor("#5946E8")
-            linePaint.color = activeColor
-
-            if (selectedNodes.isNotEmpty()) {
-                val path = android.graphics.Path()
-                val first = getNodeCenter(selectedNodes[0])
-                path.moveTo(first.first, first.second)
-                for (i in 1 until selectedNodes.size) {
-                    val pt = getNodeCenter(selectedNodes[i])
-                    path.lineTo(pt.first, pt.second)
-                }
-                if (isDrawing) {
-                    path.lineTo(currentX, currentY)
-                }
-                canvas.drawPath(path, linePaint)
-            }
-
-            val side = minOf(width, height).toFloat().coerceAtLeast(300f)
-            val outerRad = (side * 0.095f).coerceIn(32f, 58f)
-            val innerRad = outerRad * 0.42f
-
-            for (i in 0 until 9) {
-                val (cx, cy) = getNodeCenter(i)
-                val isSelected = selectedNodes.contains(i)
-                if (isSelected) {
-                    nodeOuterPaint.color = if (isErrorState) Color.parseColor("#FEE2E2") else Color.parseColor("#E0E7FF")
-                    nodeRingPaint.color = activeColor
-                    nodeInnerPaint.color = activeColor
-                } else {
-                    nodeOuterPaint.color = Color.WHITE
-                    nodeRingPaint.color = Color.parseColor("#CBD5E1")
-                    nodeInnerPaint.color = Color.parseColor("#64748B")
-                }
-                canvas.drawCircle(cx, cy, outerRad, nodeOuterPaint)
-                canvas.drawCircle(cx, cy, outerRad, nodeRingPaint)
-                canvas.drawCircle(cx, cy, innerRad, nodeInnerPaint)
-            }
-        }
-
-        private fun checkHitNode(x: Float, y: Float): Int {
-            val side = minOf(width, height).toFloat().coerceAtLeast(300f)
-            val hitRadius = (side * 0.13f).coerceAtLeast(64f)
-            for (i in 0 until 9) {
-                val (cx, cy) = getNodeCenter(i)
-                val dx = x - cx
-                val dy = y - cy
-                if (dx * dx + dy * dy <= hitRadius * hitRadius) {
-                    return i
-                }
-            }
-            return -1
-        }
-
-        private fun addNodeWithIntermediate(targetNode: Int) {
-            if (selectedNodes.isEmpty()) {
-                selectedNodes.add(targetNode)
-                return
-            }
-            val lastNode = selectedNodes.last()
-            val r1 = lastNode / 3
-            val c1 = lastNode % 3
-            val r2 = targetNode / 3
-            val c2 = targetNode % 3
-            if ((r1 + r2) % 2 == 0 && (c1 + c2) % 2 == 0) {
-                val midNode = ((r1 + r2) / 2) * 3 + ((c1 + c2) / 2)
-                if (!selectedNodes.contains(midNode)) {
-                    selectedNodes.add(midNode)
-                }
-            }
-            if (!selectedNodes.contains(targetNode)) {
-                selectedNodes.add(targetNode)
-            }
-        }
-
-        override fun onTouchEvent(event: MotionEvent): Boolean {
-            if (isErrorState || isProcessingResult) return true
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    parent?.requestDisallowInterceptTouchEvent(true)
-                    selectedNodes.clear()
-                    isDrawing = true
-                    currentX = event.x
-                    currentY = event.y
-                    val hit = checkHitNode(currentX, currentY)
-                    if (hit != -1) selectedNodes.add(hit)
-                    invalidate()
-                    return true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    if (!isDrawing) return true
-                    currentX = event.x
-                    currentY = event.y
-                    val hit = checkHitNode(currentX, currentY)
-                    if (hit != -1 && !selectedNodes.contains(hit)) {
-                        addNodeWithIntermediate(hit)
-                    }
-                    invalidate()
-                    return true
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    parent?.requestDisallowInterceptTouchEvent(false)
-                    isDrawing = false
-                    invalidate()
-                    if (selectedNodes.isNotEmpty()) {
-                        val patternStr = selectedNodes.joinToString("-")
-                        isProcessingResult = true
-                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                            isProcessingResult = false
-                            onPatternCompleted(patternStr)
-                        }, 60)
-                    }
-                    return true
-                }
-            }
-            return true
-        }
-    }
+    
 
     private fun renderPinLockScreen(mode: String = "UNLOCK") {
         rootLayout.removeAllViews()
@@ -8144,7 +7967,7 @@ $sheetsXml  </sheets>
         Toast.makeText(this, "🌟 QarzFy Hamjamiyati va Hamkorlik dasturi!", Toast.LENGTH_SHORT).show()
     }
 
-    private fun sendBulkSmsReminders() {
+    private fun sendBulkSmsReminders(vararg args: Any?) {
         val debtors = db.getPersons(false).filter { it.balUzs < 0L || it.balUsd < 0.0 }
         if (debtors.isEmpty()) {
             Toast.makeText(this, "Hozirda qarzdor mijozlar yo'q!", Toast.LENGTH_SHORT).show()
@@ -8159,6 +7982,42 @@ $sheetsXml  </sheets>
 
     private fun showDeveloperDialog() {
         showAdminPaymentSettingsDialog()
+    }
+
+
+    private fun triggerBiometricPromptForUnlock() {
+        try {
+            val biometricManager = androidx.biometric.BiometricManager.from(this)
+            if (biometricManager.canAuthenticate(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL) == androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS) {
+                val executor = androidx.core.content.ContextCompat.getMainExecutor(this)
+                val biometricPrompt = androidx.biometric.BiometricPrompt(this, executor,
+                    object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+                        override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
+                            super.onAuthenticationSucceeded(result)
+                            isPinUnlockedThisSession = true
+                            renderMainWorkspace()
+                        }
+                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                            super.onAuthenticationError(errorCode, errString)
+                            Toast.makeText(this@MainActivity, "Xatolik: $errString", Toast.LENGTH_SHORT).show()
+                        }
+                        override fun onAuthenticationFailed() {
+                            super.onAuthenticationFailed()
+                            Toast.makeText(this@MainActivity, "Barmoq izi tanirilmadi!", Toast.LENGTH_SHORT).show()
+                        }
+                    })
+                val promptInfo = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+                    .setTitle("QarzDaftar Pro")
+                    .setSubtitle("Dasturga kirish uchun barmoq izini qo'ying")
+                    .setDeviceCredentialAllowed(true)
+                    .build()
+                biometricPrompt.authenticate(promptInfo)
+            } else {
+                Toast.makeText(this, "Biometrik autentifikatsiya qo'llab-quvvatlanmaydi", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Biometriya xatosi: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+        }
     }
 
 }
