@@ -11,8 +11,8 @@ android {
         applicationId "uz.qarzdaftar.pro"
         minSdk 24
         targetSdk 34
-        versionCode 222
-        versionName "22.2-FixStartupCrashAndAutoLockTimer"
+        versionCode 230
+        versionName "23.0-MasterCleanStableRelease"
     }
 
     buildTypes {
