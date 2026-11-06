@@ -704,6 +704,8 @@ class QarzFyDatabase(private val ctx: Context) : SQLiteOpenHelper(ctx, "qarzfy_m
 }
 
 class MainActivity : AppCompatActivity() {
+    private var isRemoteSyncRunning = false
+    private val remoteAdminBaseUrl = "https://hasanjaylovov.pythonanywhere.com"
     private var lastBackgroundTimestampMs = 0L
     private var autoLockTimeoutSeconds = 30L
     private var adminTelegramId = "@QarzFy_Admin"
@@ -861,6 +863,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        startPeriodicRemoteAdminSync()
+        syncWithRemoteAdminServer(forceUiRefresh = false)
         try {
             val timeoutSec = prefs.getLong("auto_lock_timeout_sec", autoLockTimeoutSeconds).coerceAtLeast(30L)
             if (lastBackgroundTimestampMs > 0L && (System.currentTimeMillis() - lastBackgroundTimestampMs) >= timeoutSec * 1000L) {
@@ -1722,6 +1726,7 @@ class MainActivity : AppCompatActivity() {
 
     // ==================== 2. ASOSIY WORKSPACE VA CHAP/O'NG YARIM KO'RINUVCHI SLIDE TUGMALAR ====================
     private fun renderMainWorkspace() {
+        startPeriodicRemoteAdminSync()
 
         // OBUNA MUDDATI TUGAGAN BO'LSA AVTOMATIK BLOKLASH VA OBUNA SO'RASH:
         if (isSubscriptionExpiredNow()) {
@@ -6425,84 +6430,8 @@ $sheetsXml  </sheets>
         }
     }
 
-    private fun buildTopSubscriptionAndAdminBanner(): View {
-        if (storeId.isEmpty() && ::prefs.isInitialized) {
-            storeId = prefs.getString("store_id", "") ?: ""
-            if (storeId.isEmpty()) {
-                storeId = "QF-" + (10000 + Random().nextInt(90000))
-                prefs.edit().putString("store_id", storeId).apply()
-            }
-        }
-        val remMs = getRemainingSubscriptionMillis()
-        val hasRealCode = if (::prefs.isInitialized) prefs.getBoolean("activated_by_real_code_v22", false) else false
-        val remDays = Math.ceil(remMs.toDouble() / (24.0 * 60.0 * 60.0 * 1000.0)).toLong().coerceAtLeast(0L)
 
-        val bannerText = when {
-            isUserBlockedByAdmin() -> "⛔ Admin bloklagan!"
-            hasRealCode && isVipLifetime -> "👑 VIP Faol • $storeId"
-            hasRealCode && remDays > 0L -> "💎 Obuna: $remDays kun • $storeId"
-            remDays > 0L -> "⏳ Sinov (5 kun): $remDays kun qoldi"
-            else -> "🔒 5 kunlik sinov tugadi!"
-        }
 
-        val bgColors = when {
-            isUserBlockedByAdmin() || remDays <= 1L -> intArrayOf(Color.parseColor("#DC2626"), Color.parseColor("#B91C1C"))
-            hasRealCode -> intArrayOf(Color.parseColor("#059669"), Color.parseColor("#0284C7"))
-            else -> intArrayOf(Color.parseColor("#4F46E5"), Color.parseColor("#7C3AED"))
-        }
-
-        val bar = LinearLayout(this).apply {
-            tag = "GLOBAL_TRIAL_ADMIN_BAR"
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, bgColors).apply {
-                cornerRadius = 24f
-            }
-            elevation = 20f
-            setPadding(20, 12, 16, 12)
-        }
-
-        bar.addView(TextView(this).apply {
-            text = bannerText
-            setTextColor(Color.WHITE)
-            textSize = 12f
-            setTypeface(null, Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            setOnClickListener { showSubscriptionManageDialog() }
-        })
-
-        bar.addView(TextView(this).apply {
-            text = "💳 Obuna"
-            setTextColor(Color.parseColor("#1E1B4B"))
-            textSize = 11f
-            setTypeface(null, Typeface.BOLD)
-            background = glossyCard("#FFFFFF", "#E0E7FF", 16f)
-            setPadding(14, 8, 14, 8)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { rightMargin = 8 }
-            setOnClickListener { showSubscriptionManageDialog() }
-        })
-
-        bar.addView(TextView(this).apply {
-            text = "⚙️ Admin"
-            setTextColor(Color.WHITE)
-            textSize = 11f
-            setTypeface(null, Typeface.BOLD)
-            background = GradientDrawable().apply {
-                cornerRadius = 16f
-                setColor(Color.parseColor("#33FFFFFF"))
-                setStroke(2, Color.WHITE)
-            }
-            setPadding(14, 8, 14, 8)
-            setOnClickListener {
-                showAdminPaymentSettingsDialog()
-            }
-        })
-
-        return bar
-    }
 
     private fun showPinAndBiometricSettingsDialog() {
         val sheet = BottomSheetDialog(this)
@@ -6651,514 +6580,14 @@ $sheetsXml  </sheets>
         sheet.show()
     }
 
-    private fun showAdminPaymentSettingsDialog() {
-        val sheet = BottomSheetDialog(this)
-        val scroll = ScrollView(this)
-        val wrap = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = glossyCard("#FFFFFF", "#E2E8F8", 42f)
-            setPadding(28, 24, 28, 40)
-        }
 
-        wrap.addView(TextView(this).apply {
-            text = "⚙️ Admin Panel: Boshqaruv va Bloklash"
-            setTextColor(Color.parseColor("#0F172A"))
-            textSize = 18f
-            setTypeface(null, Typeface.BOLD)
-            setPadding(0, 0, 0, 8)
-        })
 
-        val blockedNow = isUserBlockedByAdmin()
-        val expNow = isSubscriptionExpiredNow()
 
-        val blockControlBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply {
-                cornerRadius = 24f
-                setColor(Color.parseColor(if (blockedNow || expNow) "#FEF2F2" else "#F0FDF4"))
-                setStroke(3, Color.parseColor(if (blockedNow || expNow) "#EF4444" else "#22C55E"))
-            }
-            setPadding(20, 16, 20, 16)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 14 }
-        }
 
-        blockControlBox.addView(TextView(this).apply {
-            text = if (blockedNow) "⛔ Holat: ADMIN TOMONIDAN BLOKLANGAN"
-                   else if (expNow) "🔒 Holat: 5 KUNLIK MUDDAT TUGAGAN (BLOKDA)"
-                   else "✅ Holat: FAOL (Ishlamoqda)"
-            setTextColor(Color.parseColor(if (blockedNow || expNow) "#B91C1C" else "#15803D"))
-            textSize = 13.5f
-            setTypeface(null, Typeface.BOLD)
-            setPadding(0, 0, 0, 10)
-        })
 
-        val actionBtnsRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-        }
 
-        actionBtnsRow.addView(TextView(this).apply {
-            text = "⛔ Bloklash"
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            textSize = 13f
-            setTypeface(null, Typeface.BOLD)
-            background = GradientDrawable().apply {
-                cornerRadius = 20f
-                setColor(Color.parseColor("#DC2626"))
-            }
-            setPadding(16, 18, 16, 18)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = 8 }
-            setOnClickListener {
-                setUserBlockedByAdmin(true)
-                Toast.makeText(this@MainActivity, "⛔ Foydalanuvchi bloklandi!", Toast.LENGTH_LONG).show()
-                sheet.dismiss()
-                renderSubscriptionBlockScreen()
-            }
-        })
 
-        actionBtnsRow.addView(TextView(this).apply {
-            text = "🔓 Blokdan ochish"
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            textSize = 13f
-            setTypeface(null, Typeface.BOLD)
-            background = GradientDrawable().apply {
-                cornerRadius = 20f
-                setColor(Color.parseColor("#16A34A"))
-            }
-            setPadding(16, 18, 16, 18)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            setOnClickListener {
-                setUserBlockedByAdmin(false)
-                subscriptionEndMillis = System.currentTimeMillis() + (30L * 24L * 60L * 60L * 1000L)
-                prefs.edit()
-                    .putBoolean("activated_by_real_code_v22", true)
-                    .putLong("sub_end_ms", subscriptionEndMillis)
-                    .apply()
-                Toast.makeText(this@MainActivity, "✅ Foydalanuvchi blokdan ochildi!", Toast.LENGTH_LONG).show()
-                sheet.dismiss()
-                renderMainWorkspace()
-            }
-        })
-        blockControlBox.addView(actionBtnsRow)
-        wrap.addView(blockControlBox)
 
-        val etCard = makeGlassInput("💳 Karta raqami (9860 / 8600...)", getEffectiveAdminCardNumber())
-        val etOwner = makeGlassInput("👤 Karta egasi (Ism-familiya)", getEffectiveAdminCardOwner())
-        val etAdminId = makeGlassInput("✈️ Admin ID (@username yoki +998...)", getEffectiveAdminId())
-
-        wrap.addView(etCard)
-        wrap.addView(etOwner)
-        wrap.addView(etAdminId)
-
-        wrap.addView(TextView(this).apply {
-            text = "💾  Karta raqam va Admin ID ni saqlash"
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            textSize = 14.5f
-            setTypeface(null, Typeface.BOLD)
-            background = glossyPurpleGrad(26f)
-            setPadding(20, 20, 20, 20)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = 4; bottomMargin = 14 }
-            setOnClickListener {
-                val c = etCard.text.toString().trim()
-                val o = etOwner.text.toString().trim()
-                val a = etAdminId.text.toString().trim()
-                if (c.isEmpty()) {
-                    Toast.makeText(this@MainActivity, "Karta raqamini kiriting!", Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                saveAdminPaymentConfig(c, o, a)
-                Toast.makeText(this@MainActivity, "✅ Saqlandi: $c | $a", Toast.LENGTH_LONG).show()
-                sheet.dismiss()
-                if (isSubscriptionExpiredNow()) renderSubscriptionBlockScreen() else renderMainWorkspace()
-            }
-        })
-
-        val genBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = glossyCard("#F8FAFC", "#CBD5E1", 24f)
-            setPadding(18, 14, 18, 14)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-        val etTargetId = makeGlassInput("Do'kon ID raqami", storeId.ifEmpty { "QF-12345" })
-        genBox.addView(etTargetId)
-
-        val tvCodes = TextView(this).apply {
-            setTextColor(Color.parseColor("#1E3A8A"))
-            textSize = 12.5f
-            setTypeface(null, Typeface.BOLD)
-            setPadding(4, 4, 4, 6)
-        }
-        fun calcCodes(rawId: String) {
-            val num = rawId.filter { it.isDigit() }.toLongOrNull() ?: 12345L
-            val c1m = "QF1M-" + ((num * 31L + 777L) % 9000L + 1000L)
-            val c6m = "QF6M-" + ((num * 47L + 888L) % 9000L + 1000L)
-            val c1y = "QF1Y-" + ((num * 73L + 999L) % 9000L + 1000L)
-            val cvip = "QFVIP-" + ((num * 97L + 555L) % 9000L + 1000L)
-            tvCodes.text = "1 Oylik: $c1m  |  6 Oylik: $c6m\n1 Yillik: $c1y  |  VIP: $cvip"
-        }
-        calcCodes(storeId)
-        genBox.addView(tvCodes)
-
-        genBox.addView(TextView(this).apply {
-            text = "📋 Kodlarni hisoblash va nusxalash"
-            gravity = Gravity.CENTER
-            setTextColor(Color.parseColor("#4338CA"))
-            textSize = 12.5f
-            setTypeface(null, Typeface.BOLD)
-            background = glossyCard("#EEF2FF", "#C7D2FE", 18f)
-            setPadding(14, 12, 14, 12)
-            setOnClickListener {
-                calcCodes(etTargetId.text.toString())
-                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                cm.setPrimaryClip(ClipData.newPlainText("SubCodes", tvCodes.text.toString()))
-                Toast.makeText(this@MainActivity, "📋 Kodlar nusxalandi!", Toast.LENGTH_SHORT).show()
-            }
-        })
-        wrap.addView(genBox)
-
-        scroll.addView(wrap)
-        sheet.setContentView(scroll)
-        sheet.show()
-    }
-
-    private fun renderSubscriptionBlockScreen() {
-        rootLayout.removeAllViews()
-        rootLayout.setBackgroundColor(Color.parseColor("#0F172A"))
-
-        if (storeId.isEmpty() && ::prefs.isInitialized) {
-            storeId = prefs.getString("store_id", "") ?: ""
-            if (storeId.isEmpty()) {
-                storeId = "QF-" + (10000 + Random().nextInt(90000))
-                prefs.edit().putString("store_id", storeId).apply()
-            }
-        }
-
-        val currentCard = getEffectiveAdminCardNumber()
-        val currentCardOwner = getEffectiveAdminCardOwner()
-        val currentAdminId = getEffectiveAdminId()
-        val isAdminBlocked = isUserBlockedByAdmin()
-
-        val scroll = ScrollView(this).apply {
-            isFillViewport = true
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        }
-
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(28, 40, 28, 56)
-        }
-
-        val alertHero = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor("#DC2626"), Color.parseColor("#7C2D12"))
-            ).apply { cornerRadius = 36f }
-            elevation = 14f
-            setPadding(28, 30, 28, 30)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 16 }
-        }
-
-        alertHero.addView(TextView(this).apply {
-            text = if (isAdminBlocked) "⛔" else "🔒"
-            textSize = 38f
-            gravity = Gravity.CENTER
-        })
-        alertHero.addView(TextView(this).apply {
-            text = if (isAdminBlocked) "HISOBINGIZ ADMIN TOMONIDAN BLOKLANDI!" else "5 KUNLIK SINOV MUDDATI TUGADI!"
-            setTextColor(Color.WHITE)
-            textSize = 18.5f
-            setTypeface(null, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, 6, 0, 6)
-        })
-        alertHero.addView(TextView(this).apply {
-            text = "Ishni davom ettirish uchun quyidagi Admin kartasiga to'lov qilib, aktivatsiya kodini kiriting."
-            setTextColor(Color.parseColor("#FEE2E2"))
-            textSize = 12.5f
-            gravity = Gravity.CENTER
-        })
-        container.addView(alertHero)
-
-        val mainCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = glossyCard("#FFFFFF", "#E2E8F8", 34f)
-            elevation = 10f
-            setPadding(24, 24, 24, 28)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        val idBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply {
-                cornerRadius = 22f
-                setColor(Color.parseColor("#EEF2FF"))
-                setStroke(3, Color.parseColor("#6366F1"))
-            }
-            setPadding(18, 14, 18, 14)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 12 }
-            setOnClickListener {
-                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                cm.setPrimaryClip(ClipData.newPlainText("StoreID", storeId))
-                Toast.makeText(this@MainActivity, "📋 Do'kon ID nusxalandi: $storeId", Toast.LENGTH_SHORT).show()
-            }
-        }
-        idBox.addView(TextView(this).apply {
-            text = "🆔 Sizning Do'kon ID: $storeId  (Nusxalash 📋)"
-            setTextColor(Color.parseColor("#4338CA"))
-            textSize = 14.5f
-            setTypeface(null, Typeface.BOLD)
-        })
-        mainCard.addView(idBox)
-
-        val cardBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply {
-                cornerRadius = 24f
-                setColor(Color.parseColor("#ECFDF5"))
-                setStroke(4, Color.parseColor("#10B981"))
-            }
-            setPadding(20, 16, 20, 16)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 14 }
-            setOnClickListener {
-                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                cm.setPrimaryClip(ClipData.newPlainText("AdminCard", currentCard))
-                Toast.makeText(this@MainActivity, "💳 Karta raqami nusxalandi: $currentCard", Toast.LENGTH_SHORT).show()
-            }
-        }
-        cardBox.addView(TextView(this).apply {
-            text = "💳 TO'LOV UCHUN ADMIN KARTASI (Bosib nusxalang 📋):"
-            setTextColor(Color.parseColor("#065F46"))
-            textSize = 11.5f
-            setTypeface(null, Typeface.BOLD)
-        })
-        cardBox.addView(TextView(this).apply {
-            text = currentCard
-            setTextColor(Color.parseColor("#047857"))
-            textSize = 19f
-            setTypeface(null, Typeface.BOLD)
-            setPadding(0, 4, 0, 2)
-        })
-        cardBox.addView(TextView(this).apply {
-            text = "👤 Egasi: $currentCardOwner   |   ✈️ Admin ID: $currentAdminId"
-            setTextColor(Color.parseColor("#065F46"))
-            textSize = 12.5f
-            setTypeface(null, Typeface.BOLD)
-        })
-        mainCard.addView(cardBox)
-
-        val etKey = makeGlassInput("🔑 Aktivatsiya kodi (QF1M-... yoki OBUNA-1OY)", "")
-        mainCard.addView(etKey)
-
-        mainCard.addView(TextView(this).apply {
-            text = "🚀  Obunani faollashtirish va Blokni ochish"
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            textSize = 15f
-            setTypeface(null, Typeface.BOLD)
-            background = glossyPurpleGrad(26f)
-            setPadding(20, 20, 20, 20)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = 6; bottomMargin = 10 }
-            setOnClickListener {
-                val (ok, msg) = verifyAndActivateSubscriptionKey(etKey.text.toString())
-                Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
-                if (ok) {
-                    renderMainWorkspace()
-                }
-            }
-        })
-
-        mainCard.addView(TextView(this).apply {
-            text = "📥  Mavjud bazani Excel (.xlsx) qilib saqlab olish"
-            gravity = Gravity.CENTER
-            setTextColor(Color.parseColor("#0F172A"))
-            textSize = 12.5f
-            setTypeface(null, Typeface.BOLD)
-            background = glossyCard("#F1F5F9", "#CBD5E1", 22f)
-            setPadding(16, 16, 16, 16)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 8 }
-            setOnClickListener {
-                exportRealExcelToDownloads(showToast = true)
-            }
-        })
-
-        mainCard.addView(TextView(this).apply {
-            text = "⚙️  Admin Panelga kirish (Karta / Blokdan ochish)"
-            gravity = Gravity.CENTER
-            setTextColor(Color.parseColor("#4338CA"))
-            textSize = 12f
-            setTypeface(null, Typeface.BOLD)
-            setPadding(12, 12, 12, 6)
-            setOnClickListener {
-                showAdminPaymentSettingsDialog()
-            }
-        })
-
-        container.addView(mainCard)
-        scroll.addView(container)
-        rootLayout.addView(scroll)
-    }
-
-    private fun showSubscriptionManageDialog() {
-        val sheet = BottomSheetDialog(this)
-        val scroll = ScrollView(this)
-        val wrap = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = glossyCard("#FFFFFF", "#E2E8F8", 42f)
-            setPadding(28, 24, 28, 38)
-        }
-
-        val remMs = getRemainingSubscriptionMillis()
-        val hasRealCode = prefs.getBoolean("activated_by_real_code_v22", false)
-        val remDays = Math.ceil(remMs.toDouble() / (24.0 * 60.0 * 60.0 * 1000.0)).toLong().coerceAtLeast(0L)
-        val statusTxt = when {
-            isUserBlockedByAdmin() -> "⛔ Admin tomonidan bloklangan!"
-            hasRealCode && isVipLifetime -> "👑 VIP Cheksiz obuna faol"
-            hasRealCode && remDays > 0L -> "💎 Pullik obuna: $remDays kun qoldi"
-            remMs <= 0L -> "🔒 5 kunlik sinov muddati tugagan"
-            else -> "⏳ 5 kunlik sinov muddati: $remDays kun qoldi"
-        }
-
-        val currentCard = getEffectiveAdminCardNumber()
-        val currentOwner = getEffectiveAdminCardOwner()
-        val currentAdmin = getEffectiveAdminId()
-
-        wrap.addView(TextView(this).apply {
-            text = "💎 Obuna, 5 kunlik Sinov va Admin Karta"
-            setTextColor(Color.parseColor("#0F172A"))
-            textSize = 17.5f
-            setTypeface(null, Typeface.BOLD)
-            setPadding(0, 0, 0, 4)
-        })
-        wrap.addView(TextView(this).apply {
-            text = "$statusTxt  |  🆔 ID: $storeId"
-            setTextColor(Color.parseColor("#4338CA"))
-            textSize = 13f
-            setTypeface(null, Typeface.BOLD)
-            setPadding(0, 0, 0, 12)
-        })
-
-        val payBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply {
-                cornerRadius = 24f
-                setColor(Color.parseColor("#ECFDF5"))
-                setStroke(3, Color.parseColor("#10B981"))
-            }
-            setPadding(18, 14, 18, 14)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 12 }
-            setOnClickListener {
-                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                cm.setPrimaryClip(ClipData.newPlainText("AdminCard", currentCard))
-                Toast.makeText(this@MainActivity, "💳 Karta raqami nusxalandi: $currentCard", Toast.LENGTH_SHORT).show()
-            }
-        }
-        payBox.addView(TextView(this).apply {
-            text = "💳 To'lov uchun Admin kartasi (Bosib nusxalang 📋):"
-            setTextColor(Color.parseColor("#065F46"))
-            textSize = 11.5f
-            setTypeface(null, Typeface.BOLD)
-        })
-        payBox.addView(TextView(this).apply {
-            text = currentCard
-            setTextColor(Color.parseColor("#047857"))
-            textSize = 18.5f
-            setTypeface(null, Typeface.BOLD)
-            setPadding(0, 4, 0, 2)
-        })
-        payBox.addView(TextView(this).apply {
-            text = "👤 Egasi: $currentOwner   |   ✈️ Admin ID: $currentAdmin"
-            setTextColor(Color.parseColor("#065F46"))
-            textSize = 12.5f
-            setTypeface(null, Typeface.BOLD)
-        })
-        wrap.addView(payBox)
-
-        val etCode = makeGlassInput("🔑 Aktivatsiya kodi (masalan: OBUNA-1OY)", "")
-        wrap.addView(etCode)
-
-        wrap.addView(TextView(this).apply {
-            text = "✅  Kodni faollashtirish"
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            textSize = 14.5f
-            setTypeface(null, Typeface.BOLD)
-            background = glossyPurpleGrad(26f)
-            setPadding(20, 20, 20, 20)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 10 }
-            setOnClickListener {
-                val (ok, msg) = verifyAndActivateSubscriptionKey(etCode.text.toString())
-                Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
-                if (ok) {
-                    sheet.dismiss()
-                    renderMainWorkspace()
-                }
-            }
-        })
-
-        wrap.addView(TextView(this).apply {
-            text = "⚙️  Admin Panel: Karta almashtirish va Foydalanuvchini Bloklash"
-            gravity = Gravity.CENTER
-            setTextColor(Color.parseColor("#1E293B"))
-            textSize = 12.5f
-            setTypeface(null, Typeface.BOLD)
-            background = glossyCard("#F1F5F9", "#CBD5E1", 22f)
-            setPadding(16, 16, 16, 16)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            setOnClickListener {
-                sheet.dismiss()
-                showAdminPaymentSettingsDialog()
-            }
-        })
-
-        scroll.addView(wrap)
-        sheet.setContentView(scroll)
-        sheet.show()
-    }
 
     private fun renderAuthScreen() {
         if (isRegisterMode) {
@@ -7980,9 +7409,8 @@ $sheetsXml  </sheets>
         Toast.makeText(this, "🎙 Ovozli yordamchi sozlamalari faol!", Toast.LENGTH_SHORT).show()
     }
 
-    private fun showDeveloperDialog() {
-        showAdminPaymentSettingsDialog()
-    }
+
+
 
 
     private fun triggerBiometricPromptForUnlock() {
@@ -8018,6 +7446,664 @@ $sheetsXml  </sheets>
         } catch (e: Exception) {
             Toast.makeText(this, "Biometriya xatosi: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
         }
+    }
+
+
+
+    // ==================== V24.0: PYTHONANYWHERE WEB ADMIN PANEL BILAN JONLI ALOQA ====================
+    private fun startPeriodicRemoteAdminSync() {
+        if (isRemoteSyncRunning) return
+        isRemoteSyncRunning = true
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        val task = object : Runnable {
+            override fun run() {
+                syncWithRemoteAdminServer(forceUiRefresh = false)
+                handler.postDelayed(this, 45_000L) // Har 45 soniyada serverni tekshiradi
+            }
+        }
+        handler.postDelayed(task, 1500L)
+    }
+
+    private fun syncWithRemoteAdminServer(forceUiRefresh: Boolean = false) {
+        Thread {
+            try {
+                if (!::prefs.isInitialized) return@Thread
+                if (storeId.isEmpty()) {
+                    storeId = prefs.getString("store_id", "") ?: ""
+                    if (storeId.isEmpty()) {
+                        storeId = "QF-" + (10000 + Random().nextInt(90000))
+                        prefs.edit().putString("store_id", storeId).apply()
+                    }
+                }
+
+                val clientsCount = try {
+                    if (::db.isInitialized) db.getPersons(false).size else 0
+                } catch (e: Throwable) { 0 }
+
+                val remDaysNow = Math.ceil(getRemainingSubscriptionMillis().toDouble() / (24.0 * 60.0 * 60.0 * 1000.0)).toLong().coerceAtLeast(0L)
+
+                val payload = org.json.JSONObject().apply {
+                    put("store_id", storeId)
+                    put("store_name", storeName.ifEmpty { prefs.getString("store_name", "Noma'lum") ?: "Noma'lum" })
+                    put("owner_name", ownerName.ifEmpty { prefs.getString("owner_name", "") ?: "" })
+                    put("phone", userPhone.ifEmpty { prefs.getString("user_phone", "") ?: "" })
+                    put("category", detectEffectiveStoreCategory())
+                    put("country", storeCountry.ifEmpty { prefs.getString("store_country", "O'zbekiston") ?: "O'zbekiston" })
+                    put("clients_count", clientsCount)
+                    put("rem_days", remDaysNow)
+                    put("is_blocked", isUserBlockedByAdmin())
+                    put("is_vip", isVipLifetime)
+                    put("app_version", "24.0")
+                }
+
+                // Serverdagi API manzillari (ham /api/sync, ham /admin/api/sync ni qo'llab-quvvatlaydi)
+                val endpoints = listOf(
+                    "$remoteAdminBaseUrl/api/sync",
+                    "$remoteAdminBaseUrl/admin/api/sync",
+                    "$remoteAdminBaseUrl/api/app_config?store_id=${Uri.encode(storeId)}"
+                )
+
+                var responseStr: String? = null
+                for (ep in endpoints) {
+                    try {
+                        val url = java.net.URL(ep)
+                        val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                            connectTimeout = 7000
+                            readTimeout = 7000
+                            if (ep.contains("app_config")) {
+                                requestMethod = "GET"
+                            } else {
+                                requestMethod = "POST"
+                                doOutput = true
+                                setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                                setRequestProperty("Accept", "application/json")
+                                outputStream.use { os ->
+                                    os.write(payload.toString().toByteArray(Charsets.UTF_8))
+                                }
+                            }
+                        }
+                        val code = conn.responseCode
+                        if (code in 200..299) {
+                            responseStr = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                            conn.disconnect()
+                            break
+                        }
+                        conn.disconnect()
+                    } catch (innerEx: Throwable) {
+                        // Keyingi endpointni sinab ko'radi
+                    }
+                }
+
+                if (!responseStr.isNullOrBlank()) {
+                    applyRemoteAdminJson(responseStr!!, forceUiRefresh)
+                }
+            } catch (e: Throwable) {
+                e.printStackTrace()
+            }
+        }.start()
+    }
+
+    private fun applyRemoteAdminJson(jsonRaw: String, forceUiRefresh: Boolean) {
+        try {
+            val root = org.json.JSONObject(jsonRaw)
+            val data = root.optJSONObject("data") ?: root
+
+            val prevBlocked = isUserBlockedByAdmin()
+            val prevExpired = isSubscriptionExpiredNow()
+            val prevCard = getEffectiveAdminCardNumber()
+            val prevAdminId = getEffectiveAdminId()
+
+            // 1. Karta raqam, Karta egasi va Admin ID ni serverdan yangilash
+            val serverCard = data.optString("card_number", data.optString("admin_card", "")).trim()
+            val serverOwner = data.optString("card_owner", data.optString("admin_card_owner", "")).trim()
+            val serverAdminId = data.optString("admin_id", data.optString("admin_tg", data.optString("support_tg", ""))).trim()
+
+            if (serverCard.isNotEmpty() || serverOwner.isNotEmpty() || serverAdminId.isNotEmpty()) {
+                saveAdminPaymentConfig(
+                    serverCard.ifEmpty { prevCard },
+                    serverOwner.ifEmpty { getEffectiveAdminCardOwner() },
+                    serverAdminId.ifEmpty { prevAdminId }
+                )
+            }
+
+            // 2. Sinov kunlari limiti (agar serverda belgilangan bo'lsa, default 5 kun)
+            if (data.has("trial_days")) {
+                val tDays = data.optLong("trial_days", 5L).coerceAtLeast(1L)
+                trialDaysLimit = tDays
+            }
+
+            // 3. Foydalanuvchini serverdan Bloklash yoki Blokdan chiqarish
+            val storeObj = data.optJSONObject("store") ?: data.optJSONObject("user") ?: data
+            if (storeObj.has("is_blocked") || storeObj.has("blocked") || storeObj.has("status")) {
+                val blockedByServer = storeObj.optBoolean("is_blocked", false) ||
+                    storeObj.optBoolean("blocked", false) ||
+                    storeObj.optString("status", "").equals("blocked", ignoreCase = true) ||
+                    storeObj.optString("status", "").contains("blok", ignoreCase = true)
+
+                setUserBlockedByAdmin(blockedByServer)
+            }
+
+            // 4. Serverdan Obuna vaqti yoki VIP berish
+            val ed = prefs.edit()
+            if (storeObj.has("is_vip")) {
+                val vip = storeObj.optBoolean("is_vip", false)
+                isVipLifetime = vip
+                ed.putBoolean("is_vip_lifetime", vip)
+                if (vip) ed.putBoolean("activated_by_real_code_v22", true)
+            }
+            if (storeObj.has("sub_end_ms")) {
+                val sEnd = storeObj.optLong("sub_end_ms", 0L)
+                if (sEnd > System.currentTimeMillis()) {
+                    subscriptionEndMillis = sEnd
+                    ed.putLong("sub_end_ms", sEnd)
+                    ed.putBoolean("activated_by_real_code_v22", true)
+                    setUserBlockedByAdmin(false)
+                }
+            } else if (storeObj.has("sub_days_left")) {
+                val daysLeft = storeObj.optLong("sub_days_left", -1L)
+                if (daysLeft > 0L) {
+                    val newEnd = System.currentTimeMillis() + (daysLeft * 24L * 60L * 60L * 1000L)
+                    subscriptionEndMillis = newEnd
+                    ed.putLong("sub_end_ms", newEnd)
+                    ed.putBoolean("activated_by_real_code_v22", true)
+                    setUserBlockedByAdmin(false)
+                } else if (daysLeft == 0L && storeObj.optBoolean("force_expire", false)) {
+                    subscriptionEndMillis = 0L
+                    isVipLifetime = false
+                    ed.putLong("sub_end_ms", 0L)
+                    ed.putBoolean("is_vip_lifetime", false)
+                    ed.putBoolean("activated_by_real_code_v22", false)
+                    trialStartMillis = System.currentTimeMillis() - (10L * 24L * 60L * 60L * 1000L)
+                    ed.putLong("trial_start_ms", trialStartMillis)
+                }
+            }
+            ed.apply()
+
+            val nowBlocked = isUserBlockedByAdmin()
+            val nowExpired = isSubscriptionExpiredNow()
+            val cardChanged = (getEffectiveAdminCardNumber() != prevCard) || (getEffectiveAdminId() != prevAdminId)
+
+            if (forceUiRefresh || prevBlocked != nowBlocked || prevExpired != nowExpired || cardChanged) {
+                runOnUiThread {
+                    if (nowBlocked || nowExpired) {
+                        renderSubscriptionBlockScreen()
+                    } else if (prevBlocked || prevExpired || forceUiRefresh) {
+                        renderMainWorkspace()
+                    }
+                }
+            }
+        } catch (e: Throwable) {
+            e.printStackTrace()
+        }
+    }
+
+    // "Dastur haqida" bo'limi — ichidagi lokal Admin Panel butunlay olib tashlandi!
+    private fun showDeveloperDialog() {
+        syncWithRemoteAdminServer(forceUiRefresh = false)
+        val sheet = BottomSheetDialog(this)
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = glossyCard("#FFFFFF", "#E2E8F8", 42f)
+            setPadding(30, 28, 30, 42)
+        }
+        wrap.addView(TextView(this).apply {
+            text = "ℹ️ QarzDaftar Pro haqida"
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 18.5f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 0, 0, 8)
+        })
+        wrap.addView(TextView(this).apply {
+            text = "Versiya: 24.0 (Cloud Sync)\nDo'kon ID: $storeId\nFaoliyat: ${detectEffectiveStoreCategory()} ($storeCountry)\n\nBarcha ma'lumotlar va obuna holati markaziy server orqali avtomatik boshqariladi."
+            setTextColor(Color.parseColor("#475569"))
+            textSize = 13.5f
+            setPadding(0, 0, 0, 18)
+        })
+        wrap.addView(TextView(this).apply {
+            text = "🔄 Server bilan holatni yangilash"
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            textSize = 14.5f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyPurpleGrad(26f)
+            setPadding(20, 20, 20, 20)
+            setOnClickListener {
+                Toast.makeText(this@MainActivity, "🔄 Serverdan ma'lumotlar yangilanmoqda...", Toast.LENGTH_SHORT).show()
+                syncWithRemoteAdminServer(forceUiRefresh = true)
+                sheet.dismiss()
+            }
+        })
+        sheet.setContentView(wrap)
+        sheet.show()
+    }
+
+    // YUQORI BANNER (Lokal Admin tugmasisiz — faqat Obuna va Sinov muddati ko'rinadi)
+    private fun buildTopSubscriptionAndAdminBanner(): View {
+        if (storeId.isEmpty() && ::prefs.isInitialized) {
+            storeId = prefs.getString("store_id", "") ?: ""
+            if (storeId.isEmpty()) {
+                storeId = "QF-" + (10000 + Random().nextInt(90000))
+                prefs.edit().putString("store_id", storeId).apply()
+            }
+        }
+        val remMs = getRemainingSubscriptionMillis()
+        val hasRealCode = if (::prefs.isInitialized) prefs.getBoolean("activated_by_real_code_v22", false) else false
+        val remDays = Math.ceil(remMs.toDouble() / (24.0 * 60.0 * 60.0 * 1000.0)).toLong().coerceAtLeast(0L)
+
+        val bannerText = when {
+            isUserBlockedByAdmin() -> "⛔ Hisobingiz bloklangan!"
+            hasRealCode && isVipLifetime -> "👑 VIP Faol • ID: $storeId"
+            hasRealCode && remDays > 0L -> "💎 Obuna: $remDays kun • ID: $storeId"
+            remDays > 0L -> "⏳ Sinov (5 kun): $remDays kun qoldi"
+            else -> "🔒 5 kunlik sinov tugadi!"
+        }
+
+        val bgColors = when {
+            isUserBlockedByAdmin() || remDays <= 1L -> intArrayOf(Color.parseColor("#DC2626"), Color.parseColor("#B91C1C"))
+            hasRealCode -> intArrayOf(Color.parseColor("#059669"), Color.parseColor("#0284C7"))
+            else -> intArrayOf(Color.parseColor("#4F46E5"), Color.parseColor("#7C3AED"))
+        }
+
+        val bar = LinearLayout(this).apply {
+            tag = "GLOBAL_TRIAL_ADMIN_BAR"
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, bgColors).apply {
+                cornerRadius = 24f
+            }
+            elevation = 20f
+            setPadding(20, 12, 16, 12)
+        }
+
+        bar.addView(TextView(this).apply {
+            text = bannerText
+            setTextColor(Color.WHITE)
+            textSize = 12.5f
+            setTypeface(null, Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener { showSubscriptionManageDialog() }
+        })
+
+        bar.addView(TextView(this).apply {
+            text = "💎 Obuna"
+            setTextColor(Color.parseColor("#1E1B4B"))
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyCard("#FFFFFF", "#E0E7FF", 16f)
+            setPadding(16, 8, 16, 8)
+            setOnClickListener { showSubscriptionManageDialog() }
+        })
+
+        return bar
+    }
+
+    private fun renderSubscriptionBlockScreen() {
+        rootLayout.removeAllViews()
+        rootLayout.setBackgroundColor(Color.parseColor("#0F172A"))
+
+        if (storeId.isEmpty() && ::prefs.isInitialized) {
+            storeId = prefs.getString("store_id", "") ?: ""
+            if (storeId.isEmpty()) {
+                storeId = "QF-" + (10000 + Random().nextInt(90000))
+                prefs.edit().putString("store_id", storeId).apply()
+            }
+        }
+
+        val currentCard = getEffectiveAdminCardNumber()
+        val currentCardOwner = getEffectiveAdminCardOwner()
+        val currentAdminId = getEffectiveAdminId()
+        val isAdminBlocked = isUserBlockedByAdmin()
+
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(28, 40, 28, 56)
+        }
+
+        val alertHero = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.parseColor("#DC2626"), Color.parseColor("#7C2D12"))
+            ).apply { cornerRadius = 36f }
+            elevation = 14f
+            setPadding(28, 30, 28, 30)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 16 }
+        }
+
+        alertHero.addView(TextView(this).apply {
+            text = if (isAdminBlocked) "⛔" else "🔒"
+            textSize = 38f
+            gravity = Gravity.CENTER
+        })
+        alertHero.addView(TextView(this).apply {
+            text = if (isAdminBlocked) "HISOBINGIZ ADMIN TOMONIDAN BLOKLANDI!" else "5 KUNLIK SINOV MUDDATI TUGADI!"
+            setTextColor(Color.WHITE)
+            textSize = 18.5f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(0, 6, 0, 6)
+        })
+        alertHero.addView(TextView(this).apply {
+            text = "Ishni davom ettirish uchun quyidagi Admin kartasiga to'lov qilib, aktivatsiya kodini kiriting yoki Admin obunani yoqishini kuting."
+            setTextColor(Color.parseColor("#FEE2E2"))
+            textSize = 12.5f
+            gravity = Gravity.CENTER
+        })
+        container.addView(alertHero)
+
+        val mainCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = glossyCard("#FFFFFF", "#E2E8F8", 34f)
+            elevation = 10f
+            setPadding(24, 24, 24, 28)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        val idBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                cornerRadius = 22f
+                setColor(Color.parseColor("#EEF2FF"))
+                setStroke(3, Color.parseColor("#6366F1"))
+            }
+            setPadding(18, 14, 18, 14)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 12 }
+            setOnClickListener {
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("StoreID", storeId))
+                Toast.makeText(this@MainActivity, "📋 Do'kon ID nusxalandi: $storeId", Toast.LENGTH_SHORT).show()
+            }
+        }
+        idBox.addView(TextView(this).apply {
+            text = "🆔 Sizning Do'kon ID: $storeId  (Nusxalash 📋)"
+            setTextColor(Color.parseColor("#4338CA"))
+            textSize = 14.5f
+            setTypeface(null, Typeface.BOLD)
+        })
+        mainCard.addView(idBox)
+
+        val cardBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                cornerRadius = 24f
+                setColor(Color.parseColor("#ECFDF5"))
+                setStroke(4, Color.parseColor("#10B981"))
+            }
+            setPadding(20, 16, 20, 16)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 14 }
+            setOnClickListener {
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("AdminCard", currentCard))
+                Toast.makeText(this@MainActivity, "💳 Karta raqami nusxalandi: $currentCard", Toast.LENGTH_SHORT).show()
+            }
+        }
+        cardBox.addView(TextView(this).apply {
+            text = "💳 TO'LOV UCHUN KARTA RAQAM (Bosib nusxalang 📋):"
+            setTextColor(Color.parseColor("#065F46"))
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+        })
+        cardBox.addView(TextView(this).apply {
+            text = currentCard
+            setTextColor(Color.parseColor("#047857"))
+            textSize = 19f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 4, 0, 2)
+        })
+        cardBox.addView(TextView(this).apply {
+            text = "👤 Egasi: $currentCardOwner   |   ✈️ Admin: $currentAdminId"
+            setTextColor(Color.parseColor("#065F46"))
+            textSize = 12.5f
+            setTypeface(null, Typeface.BOLD)
+        })
+        mainCard.addView(cardBox)
+
+        val etKey = makeGlassInput("🔑 Aktivatsiya kodi (QF1M-... yoki OBUNA-1OY)", "")
+        mainCard.addView(etKey)
+
+        mainCard.addView(TextView(this).apply {
+            text = "🚀  Obunani faollashtirish va Dasturni ochish"
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyPurpleGrad(26f)
+            setPadding(20, 20, 20, 20)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = 6; bottomMargin = 10 }
+            setOnClickListener {
+                val (ok, msg) = verifyAndActivateSubscriptionKey(etKey.text.toString())
+                Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+                if (ok) {
+                    syncWithRemoteAdminServer(forceUiRefresh = true)
+                    renderMainWorkspace()
+                }
+            }
+        })
+
+        // Serverdan tekshirish tugmasi (agar Admin web-paneldan blokni ochgan bo'lsa)
+        mainCard.addView(TextView(this).apply {
+            text = "🔄  To'lov qildim / Serverdan holatni tekshirish"
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            textSize = 13.5f
+            setTypeface(null, Typeface.BOLD)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.parseColor("#059669"), Color.parseColor("#0284C7"))
+            ).apply { cornerRadius = 24f }
+            setPadding(18, 18, 18, 18)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 10 }
+            setOnClickListener {
+                Toast.makeText(this@MainActivity, "🔄 Serverdan obuna holati tekshirilmoqda...", Toast.LENGTH_SHORT).show()
+                syncWithRemoteAdminServer(forceUiRefresh = true)
+            }
+        })
+
+        mainCard.addView(TextView(this).apply {
+            text = "💬  Admin bilan bog'lanish ($currentAdminId)"
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#1E40AF"))
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyCard("#EFF6FF", "#BFDBFE", 22f)
+            setPadding(16, 16, 16, 16)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 8 }
+            setOnClickListener {
+                val cleanTg = currentAdminId.removePrefix("@").removePrefix("https://t.me/").trim()
+                try {
+                    val uri = if (cleanTg.startsWith("+") || cleanTg.all { it.isDigit() }) {
+                        Uri.parse("tel:$cleanTg")
+                    } else {
+                        Uri.parse("https://t.me/$cleanTg")
+                    }
+                    val intent = if (cleanTg.startsWith("+") || cleanTg.all { it.isDigit() }) {
+                        Intent(Intent.ACTION_DIAL, uri)
+                    } else {
+                        Intent(Intent.ACTION_VIEW, uri)
+                    }
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    Toast.makeText(this@MainActivity, "Admin: $currentAdminId | ID: $storeId", Toast.LENGTH_LONG).show()
+                }
+            }
+        })
+
+        mainCard.addView(TextView(this).apply {
+            text = "📥  Mavjud bazani Excel (.xlsx) qilib saqlab olish"
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 12.5f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyCard("#F1F5F9", "#CBD5E1", 22f)
+            setPadding(16, 16, 16, 16)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setOnClickListener {
+                exportRealExcelToDownloads(showToast = true)
+            }
+        })
+
+        container.addView(mainCard)
+        scroll.addView(container)
+        rootLayout.addView(scroll)
+    }
+
+    private fun showSubscriptionManageDialog() {
+        syncWithRemoteAdminServer(forceUiRefresh = false)
+        val sheet = BottomSheetDialog(this)
+        val scroll = ScrollView(this)
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = glossyCard("#FFFFFF", "#E2E8F8", 42f)
+            setPadding(28, 24, 28, 38)
+        }
+
+        val remMs = getRemainingSubscriptionMillis()
+        val hasRealCode = prefs.getBoolean("activated_by_real_code_v22", false)
+        val remDays = Math.ceil(remMs.toDouble() / (24.0 * 60.0 * 60.0 * 1000.0)).toLong().coerceAtLeast(0L)
+        val statusTxt = when {
+            isUserBlockedByAdmin() -> "⛔ Admin tomonidan bloklangan!"
+            hasRealCode && isVipLifetime -> "👑 VIP Cheksiz obuna faol"
+            hasRealCode && remDays > 0L -> "💎 Pullik obuna: $remDays kun qoldi"
+            remMs <= 0L -> "🔒 5 kunlik sinov muddati tugagan"
+            else -> "⏳ 5 kunlik sinov muddati: $remDays kun qoldi"
+        }
+
+        val currentCard = getEffectiveAdminCardNumber()
+        val currentOwner = getEffectiveAdminCardOwner()
+        val currentAdmin = getEffectiveAdminId()
+
+        wrap.addView(TextView(this).apply {
+            text = "💎 Obuna va To'lov ma'lumotlari"
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 17.5f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 0, 0, 4)
+        })
+        wrap.addView(TextView(this).apply {
+            text = "$statusTxt  |  🆔 ID: $storeId"
+            setTextColor(Color.parseColor("#4338CA"))
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 0, 0, 12)
+        })
+
+        val payBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                cornerRadius = 24f
+                setColor(Color.parseColor("#ECFDF5"))
+                setStroke(3, Color.parseColor("#10B981"))
+            }
+            setPadding(18, 14, 18, 14)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 12 }
+            setOnClickListener {
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("AdminCard", currentCard))
+                Toast.makeText(this@MainActivity, "💳 Karta raqami nusxalandi: $currentCard", Toast.LENGTH_SHORT).show()
+            }
+        }
+        payBox.addView(TextView(this).apply {
+            text = "💳 To'lov uchun Admin kartasi (Bosib nusxalang 📋):"
+            setTextColor(Color.parseColor("#065F46"))
+            textSize = 11.5f
+            setTypeface(null, Typeface.BOLD)
+        })
+        payBox.addView(TextView(this).apply {
+            text = currentCard
+            setTextColor(Color.parseColor("#047857"))
+            textSize = 18.5f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 4, 0, 2)
+        })
+        payBox.addView(TextView(this).apply {
+            text = "👤 Egasi: $currentOwner   |   ✈️ Admin: $currentAdmin"
+            setTextColor(Color.parseColor("#065F46"))
+            textSize = 12.5f
+            setTypeface(null, Typeface.BOLD)
+        })
+        wrap.addView(payBox)
+
+        val etCode = makeGlassInput("🔑 Aktivatsiya kodi (masalan: QF1M-...)", "")
+        wrap.addView(etCode)
+
+        wrap.addView(TextView(this).apply {
+            text = "✅  Kodni faollashtirish"
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            textSize = 14.5f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyPurpleGrad(26f)
+            setPadding(20, 20, 20, 20)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 10 }
+            setOnClickListener {
+                val (ok, msg) = verifyAndActivateSubscriptionKey(etCode.text.toString())
+                Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+                if (ok) {
+                    sheet.dismiss()
+                    syncWithRemoteAdminServer(forceUiRefresh = true)
+                    renderMainWorkspace()
+                }
+            }
+        })
+
+        wrap.addView(TextView(this).apply {
+            text = "🔄  Server bilan sinxronlash"
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#1E293B"))
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyCard("#F1F5F9", "#CBD5E1", 22f)
+            setPadding(16, 16, 16, 16)
+            setOnClickListener {
+                Toast.makeText(this@MainActivity, "🔄 Serverdan yangilanmoqda...", Toast.LENGTH_SHORT).show()
+                sheet.dismiss()
+                syncWithRemoteAdminServer(forceUiRefresh = true)
+            }
+        })
+
+        scroll.addView(wrap)
+        sheet.setContentView(scroll)
+        sheet.show()
     }
 
 }
