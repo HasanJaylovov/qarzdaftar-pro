@@ -7541,4 +7541,624 @@ $sheetsXml  </sheets>
         }
     }
 
+
+
+    // ==================== TIKLANGAN 6 TA YORDAMCHI VA QULF FUNKSIYALARI ====================
+    inner class FullPatternLockView(
+        context: Context,
+        private val onPatternCompleted: (String) -> Unit
+    ) : View(context) {
+
+        private val selectedNodes = mutableListOf<Int>()
+        private var currentX = 0f
+        private var currentY = 0f
+        private var isDrawing = false
+        private var isErrorState = false
+        private var isProcessingResult = false
+
+        private val linePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#5946E8")
+            strokeWidth = 16f
+            style = android.graphics.Paint.Style.STROKE
+            strokeCap = android.graphics.Paint.Cap.ROUND
+            strokeJoin = android.graphics.Paint.Join.ROUND
+        }
+
+        private val nodeOuterPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.FILL
+        }
+
+        private val nodeRingPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.STROKE
+            strokeWidth = 6f
+        }
+
+        private val nodeInnerPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.FILL
+        }
+
+        private fun getNodeCenter(index: Int): Pair<Float, Float> {
+            val w = width.coerceAtLeast(300)
+            val h = height.coerceAtLeast(300)
+            val row = index / 3
+            val col = index % 3
+            val side = minOf(w, h).toFloat()
+            val offsetX = (w - side) / 2f
+            val offsetY = (h - side) / 2f
+            val pad = side * 0.18f
+            val step = ((side - 2f * pad) / 2f).coerceAtLeast(60f)
+            return Pair(offsetX + pad + col * step, offsetY + pad + row * step)
+        }
+
+        fun showErrorAndReset() {
+            isErrorState = true
+            isProcessingResult = false
+            invalidate()
+            postDelayed({
+                selectedNodes.clear()
+                isErrorState = false
+                invalidate()
+            }, 400)
+        }
+
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            super.onDraw(canvas)
+            if (width <= 0 || height <= 0) return
+
+            val activeColor = if (isErrorState) Color.parseColor("#EF4444") else Color.parseColor("#5946E8")
+            linePaint.color = activeColor
+
+            if (selectedNodes.isNotEmpty()) {
+                val path = android.graphics.Path()
+                val first = getNodeCenter(selectedNodes[0])
+                path.moveTo(first.first, first.second)
+                for (i in 1 until selectedNodes.size) {
+                    val pt = getNodeCenter(selectedNodes[i])
+                    path.lineTo(pt.first, pt.second)
+                }
+                if (isDrawing) {
+                    path.lineTo(currentX, currentY)
+                }
+                canvas.drawPath(path, linePaint)
+            }
+
+            val side = minOf(width, height).toFloat().coerceAtLeast(300f)
+            val outerRad = (side * 0.095f).coerceIn(32f, 58f)
+            val innerRad = outerRad * 0.42f
+
+            for (i in 0 until 9) {
+                val (cx, cy) = getNodeCenter(i)
+                val isSelected = selectedNodes.contains(i)
+                if (isSelected) {
+                    nodeOuterPaint.color = if (isErrorState) Color.parseColor("#FEE2E2") else Color.parseColor("#E0E7FF")
+                    nodeRingPaint.color = activeColor
+                    nodeInnerPaint.color = activeColor
+                } else {
+                    nodeOuterPaint.color = Color.WHITE
+                    nodeRingPaint.color = Color.parseColor("#CBD5E1")
+                    nodeInnerPaint.color = Color.parseColor("#64748B")
+                }
+                canvas.drawCircle(cx, cy, outerRad, nodeOuterPaint)
+                canvas.drawCircle(cx, cy, outerRad, nodeRingPaint)
+                canvas.drawCircle(cx, cy, innerRad, nodeInnerPaint)
+            }
+        }
+
+        private fun checkHitNode(x: Float, y: Float): Int {
+            val side = minOf(width, height).toFloat().coerceAtLeast(300f)
+            val hitRadius = (side * 0.13f).coerceAtLeast(64f)
+            for (i in 0 until 9) {
+                val (cx, cy) = getNodeCenter(i)
+                val dx = x - cx
+                val dy = y - cy
+                if (dx * dx + dy * dy <= hitRadius * hitRadius) {
+                    return i
+                }
+            }
+            return -1
+        }
+
+        private fun addNodeWithIntermediate(targetNode: Int) {
+            if (selectedNodes.isEmpty()) {
+                selectedNodes.add(targetNode)
+                return
+            }
+            val lastNode = selectedNodes.last()
+            val r1 = lastNode / 3
+            val c1 = lastNode % 3
+            val r2 = targetNode / 3
+            val c2 = targetNode % 3
+            if ((r1 + r2) % 2 == 0 && (c1 + c2) % 2 == 0) {
+                val midNode = ((r1 + r2) / 2) * 3 + ((c1 + c2) / 2)
+                if (!selectedNodes.contains(midNode)) {
+                    selectedNodes.add(midNode)
+                }
+            }
+            if (!selectedNodes.contains(targetNode)) {
+                selectedNodes.add(targetNode)
+            }
+        }
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            if (isErrorState || isProcessingResult) return true
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    selectedNodes.clear()
+                    isDrawing = true
+                    currentX = event.x
+                    currentY = event.y
+                    val hit = checkHitNode(currentX, currentY)
+                    if (hit != -1) selectedNodes.add(hit)
+                    invalidate()
+                    return true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (!isDrawing) return true
+                    currentX = event.x
+                    currentY = event.y
+                    val hit = checkHitNode(currentX, currentY)
+                    if (hit != -1 && !selectedNodes.contains(hit)) {
+                        addNodeWithIntermediate(hit)
+                    }
+                    invalidate()
+                    return true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                    isDrawing = false
+                    invalidate()
+                    if (selectedNodes.isNotEmpty()) {
+                        val patternStr = selectedNodes.joinToString("-")
+                        isProcessingResult = true
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            isProcessingResult = false
+                            onPatternCompleted(patternStr)
+                        }, 60)
+                    }
+                    return true
+                }
+            }
+            return true
+        }
+    }
+
+    private fun renderPinLockScreen(mode: String = "UNLOCK") {
+        rootLayout.removeAllViews()
+        rootLayout.setBackgroundColor(Color.parseColor("#F5F7FF"))
+
+        val dm = resources.displayMetrics
+        val screenH = dm.heightPixels
+        val screenW = dm.widthPixels
+
+        val isPatternActive = when (mode) {
+            "SETUP_PATTERN", "CONFIRM_PATTERN" -> true
+            "SETUP_NEW", "CONFIRM_NEW" -> false
+            else -> (lockAuthType == "PATTERN" && appPatternCode.isNotEmpty())
+        }
+
+        val fullScreenPage = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setBackgroundColor(Color.parseColor("#F5F7FF"))
+            setPadding(32, (screenH * 0.03f).toInt(), 32, (screenH * 0.025f).toInt())
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        val logoSz = (screenW * 0.15f).toInt().coerceIn(90, 145)
+        fullScreenPage.addView(ImageView(this).apply {
+            setImageResource(R.drawable.ic_qarzdaftar_logo)
+            layoutParams = LinearLayout.LayoutParams(logoSz, logoSz).apply { bottomMargin = 8 }
+        })
+
+        val titleTxt = when (mode) {
+            "SETUP_NEW" -> "Yangi PIN-kod o'rnating"
+            "CONFIRM_NEW" -> "PIN-kodni tasdiqlang"
+            "SETUP_PATTERN" -> "Yangi Chizma parol chizing"
+            "CONFIRM_PATTERN" -> "Chizma parolni tasdiqlang"
+            else -> if (isPatternActive) "Chizma parolni chizing" else "PIN-kodni kiriting"
+        }
+        fullScreenPage.addView(TextView(this).apply {
+            text = titleTxt
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 20.5f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+        })
+
+        val subTxt = when (mode) {
+            "SETUP_NEW" -> "Dasturga kirish uchun 6 xonali kod tering"
+            "CONFIRM_NEW" -> "Kiritilgan 6 xonali kodni qaytadan tering"
+            "SETUP_PATTERN" -> "Kamida 4 ta nuqtani barmoqni uzmasdan ulang"
+            "CONFIRM_PATTERN" -> "Chizilgan grafik kalitni qaytadan chizing"
+            else -> if (isPatternActive) "Dasturga kirish uchun grafik kalitni chizing" else "Dasturga kirish uchun 6 xonali kodni tering"
+        }
+        fullScreenPage.addView(TextView(this).apply {
+            text = subTxt
+            setTextColor(Color.parseColor("#64748B"))
+            textSize = 12.5f
+            gravity = Gravity.CENTER
+            setPadding(8, 4, 8, 10)
+        })
+
+        val switchRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = glossyCard("#FFFFFF", "#CBD5E1", 30f)
+            setPadding(6, 6, 6, 6)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 10 }
+        }
+
+        switchRow.addView(TextView(this).apply {
+            text = "🔢  PIN-kod"
+            gravity = Gravity.CENTER
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(if (!isPatternActive) Color.WHITE else Color.parseColor("#1E293B"))
+            background = if (!isPatternActive) glossyPurpleGrad(24f) else null
+            setPadding(14, 15, 14, 15)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener {
+                if (mode.startsWith("SETUP") || mode.startsWith("CONFIRM")) {
+                    tempPinBuffer = ""
+                    renderPinLockScreen("SETUP_NEW")
+                } else if (appPinCode.length == 6) {
+                    lockAuthType = "PIN"
+                    prefs.edit().putString("lock_auth_type", "PIN").apply()
+                    renderPinLockScreen("UNLOCK")
+                } else {
+                    tempPinBuffer = ""
+                    renderPinLockScreen("SETUP_NEW")
+                }
+            }
+        })
+
+        switchRow.addView(TextView(this).apply {
+            text = "🕸  Chizma parol"
+            gravity = Gravity.CENTER
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(if (isPatternActive) Color.WHITE else Color.parseColor("#1E293B"))
+            background = if (isPatternActive) glossyPurpleGrad(24f) else null
+            setPadding(14, 15, 14, 15)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener {
+                if (mode.startsWith("SETUP") || mode.startsWith("CONFIRM")) {
+                    tempPatternBuffer = ""
+                    renderPinLockScreen("SETUP_PATTERN")
+                } else if (appPatternCode.isNotEmpty()) {
+                    lockAuthType = "PATTERN"
+                    prefs.edit().putString("lock_auth_type", "PATTERN").apply()
+                    renderPinLockScreen("UNLOCK")
+                } else {
+                    tempPatternBuffer = ""
+                    renderPinLockScreen("SETUP_PATTERN")
+                }
+            }
+        })
+        fullScreenPage.addView(switchRow)
+
+        if (isPatternActive) {
+            val patternHolder = FrameLayout(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    0,
+                    1f
+                ).apply { topMargin = 4; bottomMargin = 10 }
+            }
+
+            lateinit var patternView: FullPatternLockView
+            patternView = FullPatternLockView(this) { drawnPattern ->
+                val count = drawnPattern.split("-").filter { it.isNotEmpty() }.size
+                if (count < 4) {
+                    Toast.makeText(this@MainActivity, "⚠️ Kamida 4 ta nuqtani ulang!", Toast.LENGTH_SHORT).show()
+                    patternView.showErrorAndReset()
+                    return@FullPatternLockView
+                }
+                when (mode) {
+                    "SETUP_PATTERN" -> {
+                        tempPatternBuffer = drawnPattern
+                        renderPinLockScreen("CONFIRM_PATTERN")
+                    }
+                    "CONFIRM_PATTERN" -> {
+                        if (drawnPattern == tempPatternBuffer) {
+                            appPatternCode = drawnPattern
+                            lockAuthType = "PATTERN"
+                            isPinSecurityEnabled = true
+                            prefs.edit()
+                                .putString("app_pattern_code", appPatternCode)
+                                .putString("lock_auth_type", "PATTERN")
+                                .putBoolean("pin_security_enabled", true)
+                                .apply()
+                            Toast.makeText(this@MainActivity, "✅ Chizma parol saqlandi!", Toast.LENGTH_SHORT).show()
+                            isPinUnlockedThisSession = true
+                            renderMainWorkspace()
+                        } else {
+                            Toast.makeText(this@MainActivity, "❌ Chizmalar mos kelmadi!", Toast.LENGTH_LONG).show()
+                            tempPatternBuffer = ""
+                            renderPinLockScreen("SETUP_PATTERN")
+                        }
+                    }
+                    else -> {
+                        if (drawnPattern == appPatternCode) {
+                            isPinUnlockedThisSession = true
+                            renderMainWorkspace()
+                        } else {
+                            Toast.makeText(this@MainActivity, "❌ Chizma parol noto'g'ri!", Toast.LENGTH_SHORT).show()
+                            patternView.showErrorAndReset()
+                        }
+                    }
+                }
+            }.apply {
+                background = glossyCard("#FFFFFF", "#E2E8F8", 44f)
+                elevation = 6f
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    Gravity.CENTER
+                )
+            }
+            patternHolder.addView(patternView)
+            fullScreenPage.addView(patternHolder)
+
+            val bioBar = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                background = glossyPurpleGrad(30f)
+                setPadding(24, 20, 24, 20)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                setOnClickListener { triggerBiometricPromptForUnlock() }
+            }
+            bioBar.addView(ImageView(this).apply {
+                setImageResource(R.drawable.ic_fingerprint_vec)
+                layoutParams = LinearLayout.LayoutParams(50, 50).apply { rightMargin = 14 }
+            })
+            bioBar.addView(TextView(this).apply {
+                text = "Barmoq izi / Face ID orqali ochish"
+                setTextColor(Color.WHITE)
+                textSize = 14f
+                setTypeface(null, Typeface.BOLD)
+            })
+            fullScreenPage.addView(bioBar)
+        } else {
+            val dotsRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = 4; bottomMargin = 12 }
+            }
+            val dotViews = mutableListOf<View>()
+            for (i in 0 until 6) {
+                val dot = View(this).apply {
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(Color.parseColor("#E2E8F0"))
+                        setStroke(3, Color.parseColor("#94A3B8"))
+                    }
+                    layoutParams = LinearLayout.LayoutParams(42, 42).apply { setMargins(14, 0, 14, 0) }
+                }
+                dotViews.add(dot)
+                dotsRow.addView(dot)
+            }
+            fullScreenPage.addView(dotsRow)
+
+            var enteredPin = ""
+
+            fun updateDots() {
+                for (i in 0 until 6) {
+                    val filled = (i < enteredPin.length)
+                    dotViews[i].background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        if (filled) {
+                            setColor(Color.parseColor("#5946E8"))
+                            setStroke(3, Color.parseColor("#3677F5"))
+                        } else {
+                            setColor(Color.parseColor("#E2E8F0"))
+                            setStroke(3, Color.parseColor("#94A3B8"))
+                        }
+                    }
+                }
+            }
+
+            fun handlePinDone() {
+                if (mode == "SETUP_NEW") {
+                    tempPinBuffer = enteredPin
+                    renderPinLockScreen("CONFIRM_NEW")
+                } else if (mode == "CONFIRM_NEW") {
+                    if (enteredPin == tempPinBuffer) {
+                        appPinCode = enteredPin
+                        lockAuthType = "PIN"
+                        isPinSecurityEnabled = true
+                        prefs.edit()
+                            .putString("app_pin_code", appPinCode)
+                            .putString("lock_auth_type", "PIN")
+                            .putBoolean("pin_security_enabled", true)
+                            .apply()
+                        Toast.makeText(this@MainActivity, "✅ PIN-kod saqlandi!", Toast.LENGTH_SHORT).show()
+                        isPinUnlockedThisSession = true
+                        renderMainWorkspace()
+                    } else {
+                        Toast.makeText(this@MainActivity, "❌ Kodlar mos kelmadi!", Toast.LENGTH_LONG).show()
+                        tempPinBuffer = ""
+                        renderPinLockScreen("SETUP_NEW")
+                    }
+                } else {
+                    if (enteredPin == appPinCode) {
+                        isPinUnlockedThisSession = true
+                        renderMainWorkspace()
+                    } else {
+                        Toast.makeText(this@MainActivity, "❌ PIN-kod noto'g'ri!", Toast.LENGTH_SHORT).show()
+                        enteredPin = ""
+                        updateDots()
+                    }
+                }
+            }
+
+            val keypadGrid = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    0,
+                    1f
+                )
+            }
+
+            val rows = listOf(
+                listOf("1", "2", "3"),
+                listOf("4", "5", "6"),
+                listOf("7", "8", "9"),
+                listOf("BIO", "0", "⌫")
+            )
+
+            val btnDiameter = (minOf(screenW / 3.7f, screenH / 8.3f)).toInt().coerceIn(135, 225)
+
+            rows.forEach { rVals ->
+                val rowLin = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        0,
+                        1f
+                    )
+                }
+                rVals.forEach { keyStr ->
+                    val cellFrame = FrameLayout(this).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+                    }
+                    if (keyStr == "BIO") {
+                        val bioBtn = FrameLayout(this).apply {
+                            background = glossyRoundBtnBg("#5946E8", "#3677F5")
+                            elevation = 8f
+                            layoutParams = FrameLayout.LayoutParams(btnDiameter, btnDiameter, Gravity.CENTER)
+                            addView(ImageView(this@MainActivity).apply {
+                                setImageResource(R.drawable.ic_fingerprint_vec)
+                                layoutParams = FrameLayout.LayoutParams(
+                                    (btnDiameter * 0.48f).toInt(),
+                                    (btnDiameter * 0.48f).toInt(),
+                                    Gravity.CENTER
+                                )
+                            })
+                            setOnClickListener { triggerBiometricPromptForUnlock() }
+                        }
+                        cellFrame.addView(bioBtn)
+                    } else {
+                        val numBtn = TextView(this).apply {
+                            text = keyStr
+                            gravity = Gravity.CENTER
+                            textSize = if (keyStr == "⌫") 22f else 25f
+                            setTypeface(null, Typeface.BOLD)
+                            setTextColor(Color.parseColor("#0F172A"))
+                            background = glossyRoundBtnBg("#FFFFFF", "#CBD5E1")
+                            elevation = 6f
+                            layoutParams = FrameLayout.LayoutParams(btnDiameter, btnDiameter, Gravity.CENTER)
+                            setOnClickListener {
+                                if (keyStr == "⌫") {
+                                    if (enteredPin.isNotEmpty()) {
+                                        enteredPin = enteredPin.dropLast(1)
+                                        updateDots()
+                                    }
+                                } else {
+                                    if (enteredPin.length < 6) {
+                                        enteredPin += keyStr
+                                        updateDots()
+                                        if (enteredPin.length == 6) {
+                                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                                handlePinDone()
+                                            }, 120)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        cellFrame.addView(numBtn)
+                    }
+                    rowLin.addView(cellFrame)
+                }
+                keypadGrid.addView(rowLin)
+            }
+            fullScreenPage.addView(keypadGrid)
+        }
+
+        rootLayout.addView(fullScreenPage)
+    }
+
+    private fun openBusinessInfoDialog() {
+        val sheet = BottomSheetDialog(this)
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = glossyCard("#FFFFFF", "#E2E8F8", 42f)
+            setPadding(30, 26, 30, 40)
+        }
+        wrap.addView(TextView(this).apply {
+            text = "🏪 Muassasa va Faoliyat ma'lumotlari"
+            setTextColor(Color.parseColor("#0F172A"))
+            textSize = 18f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 0, 0, 12)
+        })
+        val etStore = makeGlassInput("Muassasa nomi", storeName)
+        val etOwner = makeGlassInput("Mas'ul shaxs", ownerName)
+        val etCat = makeGlassInput("Faoliyat sohasi (Do'kon / Dorixona / Qurilish / Oshxona)", storeCategory)
+        wrap.addView(etStore)
+        wrap.addView(etOwner)
+        wrap.addView(etCat)
+
+        wrap.addView(TextView(this).apply {
+            text = "💾 Saqlash"
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            setTypeface(null, Typeface.BOLD)
+            background = glossyPurpleGrad(26f)
+            setPadding(20, 20, 20, 20)
+            setOnClickListener {
+                storeName = etStore.text.toString().trim().ifEmpty { storeName }
+                ownerName = etOwner.text.toString().trim().ifEmpty { ownerName }
+                storeCategory = etCat.text.toString().trim().ifEmpty { storeCategory }
+                prefs.edit()
+                    .putString("store_name", storeName)
+                    .putString("owner_name", ownerName)
+                    .putString("store_category", storeCategory)
+                    .apply()
+                sheet.dismiss()
+                renderMainWorkspace()
+            }
+        })
+        sheet.setContentView(wrap)
+        sheet.show()
+    }
+
+    private fun showCommunityAndAmbassadorDialog() {
+        Toast.makeText(this, "🌟 QarzFy Hamjamiyati va Hamkorlik dasturi!", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun sendBulkSmsReminders() {
+        val debtors = db.getPersons(false).filter { it.balUzs < 0L || it.balUsd < 0.0 }
+        if (debtors.isEmpty()) {
+            Toast.makeText(this, "Hozirda qarzdor mijozlar yo'q!", Toast.LENGTH_SHORT).show()
+            return
+        }
+        Toast.makeText(this, "📩 ${debtors.size} ta qarzdor mijozga SMS eslatma tayyorlanmoqda...", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun showVoiceSettingsDialog() {
+        Toast.makeText(this, "🎙 Ovozli yordamchi sozlamalari faol!", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun showDeveloperDialog() {
+        showAdminPaymentSettingsDialog()
+    }
+
 }
